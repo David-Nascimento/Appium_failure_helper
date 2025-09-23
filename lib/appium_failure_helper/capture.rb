@@ -30,6 +30,8 @@ module AppiumFailureHelper
       'XCUIElementTypeOther' => 'elm',
       'XCUIElementTypeCell' => 'cell',
     }.freeze
+    
+    MAX_VALUE_LENGTH = 100
 
     def self.handler_failure(driver)
       begin
@@ -52,26 +54,26 @@ module AppiumFailureHelper
 
         platform = driver.capabilities['platformName']&.downcase || 'unknown'
 
+        seen_elements = {}
+        suggestions = []
+
+        doc.xpath('//*').each do |node|
+          next if node.name == 'hierarchy'
+          attrs = node.attributes.transform_values(&:value)
+          
+          unique_key = "#{node.name}|#{attrs['resource-id']}|#{attrs['content-desc']}|#{attrs['text']}"
+          
+          unless seen_elements[unique_key]
+            name = self.suggest_name(node.name, attrs)
+            locators = self.xpath_generator(node.name, attrs, platform)
+            
+            suggestions << { name: name, locators: locators }
+            seen_elements[unique_key] = true
+          end
+        end
+
         yaml_path = "#{output_folder}/element_suggestions_#{timestamp}.yaml"
         File.open(yaml_path, 'w') do |f|
-          suggestions = doc.xpath('//*').map do |node|
-            next if node.name == 'hierarchy'
-            attrs = node.attributes.transform_values(&:value)
-            
-            name = self.suggest_name(node.name, attrs)
-            xpath = self.xpath_generator(node.name, attrs, platform)
-
-            parent_node = node.parent
-            parent_xpath = parent_node ? parent_node.path : nil
-            
-            { 
-              name: name, 
-              type: 'xpath', 
-              locator: xpath,
-              parent_locator: parent_xpath
-            }
-          end.compact
-
           f.write(YAML.dump(suggestions))
         end
 
@@ -83,99 +85,108 @@ module AppiumFailureHelper
 
     private
     
+    def self.truncate(value)
+      return value unless value.is_a?(String)
+      value.size > MAX_VALUE_LENGTH ? "#{value[0...MAX_VALUE_LENGTH]}..." : value
+    end
+
     def self.suggest_name(tag, attrs)
       type = tag.split('.').last
       pfx = PREFIX[tag] || PREFIX[type] || 'elm'
       name = attrs['content-desc'] || attrs['text'] || attrs['resource-id'] || attrs['label'] || attrs['name'] || 'unknown' || type
-      name = name.strip.gsub(/[^0-9a-z]/, '').split.map(&:capitalize).join
+      name = truncate(name.strip.gsub(/[^0-9a-z]/, '').split.map(&:capitalize).join)
       "#{pfx}#{name}"
     end
 
     def self.xpath_generator(tag, attrs, platform)
       case platform
       when 'android'
-        self.generate_android_xpath(tag, attrs)
+        self.generate_android_xpaths(tag, attrs)
       when 'ios'
-        self.generate_ios_xpath(tag, attrs)
+        self.generate_ios_xpaths(tag, attrs)
       else
-        self.generate_unknown_xpath(tag, attrs)
+        self.generate_unknown_xpaths(tag, attrs)
       end
     end
 
-    def self.generate_android_xpath(tag, attrs)
-      strategies = [
-        # Estratégia 1: Combinação de resource-id e text/content-desc
-        -> {
-          if attrs['resource-id'] && !attrs['resource-id'].empty?
-            if attrs['text'] && !attrs['text'].empty?
-              return "//#{tag}[@resource-id='#{attrs['resource-id']}' and @text='#{attrs['text']}']"
-            elsif attrs['content-desc'] && !attrs['content-desc'].empty?
-              return "//#{tag}[@resource-id='#{attrs['resource-id']}' and @content-desc='#{attrs['content-desc']}']"
-            end
-          end
-          nil
-        },
-        # Estratégia 2: resource-id único
-        -> { "//#{tag}[@resource-id='#{attrs['resource-id']}']" if attrs['resource-id'] && !attrs['resource-id'].empty? },
-        # Estratégia 3: starts-with para resource-id dinâmico
-        -> {
-          if attrs['resource-id'] && attrs['resource-id'].include?(':id/')
-            id_part = attrs['resource-id'].split(':id/').last
-            return "//#{tag}[starts-with(@resource-id, '#{id_part}')]"
-          end
-          nil
-        },
-        # Estratégia 4: text como identificador
-        -> { "//#{tag}[@text='#{attrs['text']}']" if attrs['text'] && !attrs['text'].empty? },
-        # Estratégia 5: content-desc como identificador
-        -> { "//#{tag}[@content-desc='#{attrs['content-desc']}']" if attrs['content-desc'] && !attrs['content-desc'].empty? },
-        # Estratégia 6: Fallback genérico
-        -> { "//#{tag}" }
-      ]
-
-      strategies.each do |strategy|
-        result = strategy.call
-        return result if result
+    def self.generate_android_xpaths(tag, attrs)
+      locators = []
+      
+      # Estratégia 1: Combinação de atributos
+      if attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['text'] && !attrs['text'].empty?
+        locators << { strategy: 'resource_id_and_text', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}' and @text='#{self.truncate(attrs['text'])}']" }
+      elsif attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['content-desc'] && !attrs['content-desc'].empty?
+        locators << { strategy: 'resource_id_and_content_desc', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}' and @content-desc='#{self.truncate(attrs['content-desc'])}']" }
       end
-    end
 
-    def self.generate_ios_xpath(tag, attrs)
-      strategies = [
-        # Estratégia 1: Combinação de accessibility-id e label
-        -> {
-          if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
-            if attrs['label'] && !attrs['label'].empty?
-              return "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}' and @label='#{attrs['label']}']"
-            end
-          end
-          nil
-        },
-        # Estratégia 2: accessibility-id como identificador
-        -> { "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}']" if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? },
-        # Estratégia 3: label como identificador
-        -> { "//#{tag}[@label='#{attrs['label']}']" if attrs['label'] && !attrs['label'].empty? },
-        # Estratégia 4: name como identificador
-        -> { "//#{tag}[@name='#{attrs['name']}']" if attrs['name'] && !attrs['name'].empty? },
-        # Estratégia 5: Fallback genérico
-        -> { "//#{tag}" }
-      ]
-
-      strategies.each do |strategy|
-        result = strategy.call
-        return result if result
-      end
-    end
-
-    def self.generate_unknown_xpath(tag, attrs)
+      # Estratégia 2: ID único
       if attrs['resource-id'] && !attrs['resource-id'].empty?
-        "//#{tag}[@resource-id='#{attrs['resource-id']}']"
-      elsif attrs['content-desc'] && !attrs['content-desc'].empty?
-        "//#{tag}[@content-desc='#{attrs['content-desc']}']"
-      elsif attrs['text'] && !attrs['text'].empty?
-        "//#{tag}[@text='#{attrs['text']}']"
-      else
-        "//#{tag}"
+        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}']" }
       end
+
+      # Estratégia 3: starts-with para IDs dinâmicos
+      if attrs['resource-id'] && attrs['resource-id'].include?(':id/')
+        id_part = attrs['resource-id'].split(':id/').last
+        locators << { strategy: 'starts_with_resource_id', locator: "//#{tag}[starts-with(@resource-id, '#{id_part}')]" }
+      end
+
+      # Estratégia 4: Texto e content-desc como identificadores
+      if attrs['text'] && !attrs['text'].empty?
+        locators << { strategy: 'text', locator: "//#{tag}[@text='#{self.truncate(attrs['text'])}']" }
+      end
+      if attrs['content-desc'] && !attrs['content-desc'].empty?
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc='#{self.truncate(attrs['content-desc'])}']" }
+      end
+
+      # Fallback genérico (sempre adicionado)
+      locators << { strategy: 'generic_tag', locator: "//#{tag}" }
+
+      locators
+    end
+
+    def self.generate_ios_xpaths(tag, attrs)
+      locators = []
+
+      # Estratégia 1: Combinação de atributos
+      if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? && attrs['label'] && !attrs['label'].empty?
+        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}' and @label='#{self.truncate(attrs['label'])}']" }
+      end
+
+      # Estratégia 2: ID único
+      if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
+        locators << { strategy: 'accessibility_id', locator: "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}']" }
+      end
+
+      # Estratégia 3: label, name ou value
+      if attrs['label'] && !attrs['label'].empty?
+        locators << { strategy: 'label', locator: "//#{tag}[@label='#{self.truncate(attrs['label'])}']" }
+      end
+      if attrs['name'] && !attrs['name'].empty?
+        locators << { strategy: 'name', locator: "//#{tag}[@name='#{self.truncate(attrs['name'])}']" }
+      end
+
+      # Fallback genérico (sempre adicionado)
+      locators << { strategy: 'generic_tag', locator: "//#{tag}" }
+
+      locators
+    end
+
+    def self.generate_unknown_xpaths(tag, attrs)
+      locators = []
+      if attrs['resource-id'] && !attrs['resource-id'].empty?
+        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}']" }
+      end
+      if attrs['content-desc'] && !attrs['content-desc'].empty?
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc='#{self.truncate(attrs['content-desc'])}']" }
+      end
+      if attrs['text'] && !attrs['text'].empty?
+        locators << { strategy: 'text', locator: "//#{tag}[@text='#{self.truncate(attrs['text'])}']" }
+      end
+
+      # Fallback genérico (sempre adicionado)
+      locators << { strategy: 'generic_tag', locator: "//#{tag}" }
+      
+      locators
     end
   end
 end
