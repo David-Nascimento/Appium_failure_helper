@@ -2,6 +2,7 @@ require 'nokogiri'
 require 'fileutils'
 require 'base64'
 require 'yaml'
+require 'logger'
 
 module AppiumFailureHelper
   class Capture
@@ -32,26 +33,32 @@ module AppiumFailureHelper
     }.freeze
     
     MAX_VALUE_LENGTH = 100
+    @@logger = nil
 
     def self.handler_failure(driver, exception)
       begin
+        self.setup_logger unless @@logger
+        
         # Remove a pasta reports_failure ao iniciar uma nova execução
         FileUtils.rm_rf("reports_failure")
+        @@logger.info("Pasta 'reports_failure' removida para uma nova execução.")
         
         timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
         output_folder = "reports_failure/failure_#{timestamp}"
         
         FileUtils.mkdir_p(output_folder)
+        @@logger.info("Pasta de saída criada: #{output_folder}")
         
         screenshot_path = "#{output_folder}/screenshot_#{timestamp}.png"
         File.open(screenshot_path, 'wb') do |f|
           f.write(Base64.decode64(driver.screenshot_as(:base64)))
         end
-        puts "Screenshot saved to #{screenshot_path}"
+        @@logger.info("Screenshot salvo em #{screenshot_path}")
 
         page_source = driver.page_source
         xml_path = "#{output_folder}/page_source_#{timestamp}.xml"
         File.write(xml_path, page_source)
+        @@logger.info("Page source salvo em #{xml_path}")
 
         doc = Nokogiri::XML(page_source)
         platform = driver.capabilities['platformName']&.downcase || 'unknown'
@@ -90,21 +97,29 @@ module AppiumFailureHelper
         File.open(targeted_yaml_path, 'w') do |f|
           f.write(YAML.dump(targeted_report))
         end
-        puts "Targeted analysis saved to #{targeted_yaml_path}"
+        @@logger.info("Análise direcionada salva em #{targeted_yaml_path}")
 
         # --- Geração do Relatório COMPLETO (2) ---
         full_dump_yaml_path = "#{output_folder}/all_elements_dump_#{timestamp}.yaml"
         File.open(full_dump_yaml_path, 'w') do |f|
           f.write(YAML.dump(all_elements_suggestions))
         end
-        puts "Full page dump saved to #{full_dump_yaml_path}"
+        @@logger.info("Dump completo da página salvo em #{full_dump_yaml_path}")
 
       rescue => e
-        puts "Error capturing failure details: #{e.message}\n#{e.backtrace.join("\n")}"
+        @@logger.error("Erro ao capturar detalhes da falha: #{e.message}\n#{e.backtrace.join("\n")}")
       end
     end
 
     private
+    
+    def self.setup_logger
+      @@logger = Logger.new(STDOUT)
+      @@logger.level = Logger::INFO
+      @@logger.formatter = proc do |severity, datetime, progname, msg|
+        "#{datetime.strftime('%Y-%m-%d %H:%M:%S')} [#{severity}] #{msg}\n"
+      end
+    end
     
     def self.extract_info_from_exception(exception)
       message = exception.message
@@ -228,7 +243,7 @@ module AppiumFailureHelper
       locators = []
 
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? && attrs['label'] && !attrs['label'].empty?
-        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}\"]" }
+        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}']" }
       end
 
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
@@ -253,7 +268,7 @@ module AppiumFailureHelper
         locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\"]" }
       end
       if attrs['content-desc'] && !attrs['content-desc'].empty?
-        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}']" }
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
       if attrs['text'] && !attrs['text'].empty?
         locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}']" }
