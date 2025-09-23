@@ -4,35 +4,34 @@ Este módulo Ruby foi projetado para ser uma ferramenta de diagnóstico intelige
 
 ## Funcionalidades Principais
 
-* **Análise de Falha Automatizada:** Captura o estado da aplicação no momento da falha.
-* **Captura de Artefatos:** Salva um **screenshot** da tela e o **XML completo do `page_source`** em uma pasta dedicada por falha.
-* **Geração de Localizadores Inteligente:** Percorre a árvore de elementos e gera um **relatório YAML** com sugestões de XPaths otimizados para cada elemento.
+* **Diagnóstico de Falha Automatizado:** No momento de uma falha, a ferramenta captura automaticamente o estado da aplicação e gera um conjunto de artefatos de depuração.
+
+* **Captura de Artefatos:** Salva um **screenshot** da tela, o **XML completo do `page_source`**, e um relatório de análise em uma pasta com carimbo de data e hora para cada falha.
+
+* **Geração de Localizadores Inteligente:** Percorre a árvore de elementos e gera um relatório YAML com sugestões de XPaths otimizados para cada elemento.
+
 * **Lógica de XPath Otimizada:** Utiliza as melhores práticas para cada plataforma (**Android e iOS**), priorizando os localizadores mais estáveis e combinando atributos para alta especificidade.
-* **Organização de Saída:** Cria uma pasta com um carimbo de data/hora para cada falha (`/failure_AAAA_MM_DD_HHMMSS`), mantendo os arquivos organizados.
-* **Contexto de Elementos:** O relatório YAML agora inclui o **XPath do elemento pai (`parent_locator`)**, fornecendo contexto crucial para a depuração e construção de Page Objects.
+
+* **Tratamento de Dados:** Trunca valores de atributos muito longos para evitar quebras no relatório e garante que não haja elementos duplicados.
+
+* **Sistema de Logging:** Usa a biblioteca padrão `Logger` do Ruby para fornecer feedback detalhado e limpo no console.
+
+* **Múltiplos Relatórios:** Gera dois arquivos YAML: um **focado** no elemento que falhou e um **completo** com todos os elementos da tela.
+
+* **Relatório HTML Interativo:** Cria um relatório HTML visualmente agradável que une o screenshot, o XML e os localizadores sugeridos em uma única página para fácil acesso e análise.
 
 ## Como Funciona
 
-A lógica do `AppiumFailureHelper` é ativada por um evento de falha em seu framework de testes (ex: Cucumber `After` hook). O método `handler_failure` executa as seguintes etapas:
-
-1.  Cria um diretório de saída exclusivo.
-2.  Captura o screenshot e o `page_source` do driver.
-3.  Determina a plataforma do dispositivo a partir das capacidades do driver.
-4.  Itera sobre cada nó do `page_source` e, para cada um, chama a lógica de geração de XPath e de nome.
-5.  A lógica de XPath utiliza um conjunto de estratégias priorizadas para cada plataforma, como **combinação de atributos** (`@resource-id` e `@text`) e o uso de `starts-with()` para elementos dinâmicos.
-6.  Salva um arquivo `.yaml` estruturado, contendo o nome sugerido, o tipo (`xpath`) e o localizador para cada elemento.
-
-## Uso
-
-Para usar este helper, integre-o ao seu framework de testes. Um exemplo comum é utilizá-lo em um hook `After` do Cucumber, passando o objeto de driver do Appium.
+O `AppiumFailureHelper` deve ser integrado ao seu framework de testes. Um exemplo comum é utilizá-lo em um hook `After` do Cucumber, passando o objeto de driver do Appium e a exceção do cenário.
 
 **`features/support/hooks.rb`**
+
 ```ruby
 require 'appium_failure_helper'
 
 After do |scenario|
   if scenario.failed?
-    AppiumFailureHelper::Capture.handler_failure(appium_driver)
+    AppiumFailureHelper::Capture.handler_failure(appium_driver, scenario.exception)
   end
 end
 
