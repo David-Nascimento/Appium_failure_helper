@@ -33,10 +33,13 @@ module AppiumFailureHelper
     
     MAX_VALUE_LENGTH = 100
 
-    def self.handler_failure(driver)
+    def self.handler_failure(driver, exception)
       begin
+        # Remove a pasta reports_failure ao iniciar uma nova execução
+        FileUtils.rm_rf("reports_failure")
+        
         timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-        output_folder = "screenshots/failure_#{timestamp}"
+        output_folder = "reports_failure/failure_#{timestamp}"
         
         FileUtils.mkdir_p(output_folder)
         
@@ -51,39 +54,108 @@ module AppiumFailureHelper
         File.write(xml_path, page_source)
 
         doc = Nokogiri::XML(page_source)
-
         platform = driver.capabilities['platformName']&.downcase || 'unknown'
 
-        seen_elements = {}
-        suggestions = []
+        failed_element_info = self.extract_info_from_exception(exception)
 
+        # --- Processamento de todos os elementos ---
+        seen_elements = {}
+        all_elements_suggestions = []
         doc.xpath('//*').each do |node|
           next if node.name == 'hierarchy'
           attrs = node.attributes.transform_values(&:value)
           
-          unique_key = "#{node.name}|#{attrs['resource-id']}|#{attrs['content-desc']}|#{attrs['text']}"
+          unique_key = "#{node.name}|#{attrs['resource-id'].to_s}|#{attrs['content-desc'].to_s}|#{attrs['text'].to_s}"
           
           unless seen_elements[unique_key]
             name = self.suggest_name(node.name, attrs)
             locators = self.xpath_generator(node.name, attrs, platform)
             
-            suggestions << { name: name, locators: locators }
+            all_elements_suggestions << { name: name, locators: locators }
             seen_elements[unique_key] = true
           end
         end
 
-        yaml_path = "#{output_folder}/element_suggestions_#{timestamp}.yaml"
-        File.open(yaml_path, 'w') do |f|
-          f.write(YAML.dump(suggestions))
-        end
+        # --- Geração do Relatório FOCADO (1) ---
+        targeted_report = {
+          failed_element: failed_element_info,
+          similar_elements: [],
+        }
 
-        puts "Element suggestions saved to #{yaml_path}"
+        if failed_element_info && failed_element_info[:selector_value]
+          targeted_report[:similar_elements] = self.find_similar_elements(doc, failed_element_info, platform)
+        end
+        
+        targeted_yaml_path = "#{output_folder}/failure_analysis_#{timestamp}.yaml"
+        File.open(targeted_yaml_path, 'w') do |f|
+          f.write(YAML.dump(targeted_report))
+        end
+        puts "Targeted analysis saved to #{targeted_yaml_path}"
+
+        # --- Geração do Relatório COMPLETO (2) ---
+        full_dump_yaml_path = "#{output_folder}/all_elements_dump_#{timestamp}.yaml"
+        File.open(full_dump_yaml_path, 'w') do |f|
+          f.write(YAML.dump(all_elements_suggestions))
+        end
+        puts "Full page dump saved to #{full_dump_yaml_path}"
+
       rescue => e
         puts "Error capturing failure details: #{e.message}\n#{e.backtrace.join("\n")}"
       end
     end
 
     private
+    
+    def self.extract_info_from_exception(exception)
+      message = exception.message
+      info = {}
+      
+      patterns = [
+        /(?:could not be found|cannot find element) using (.+)=['"](.+)['"]/i,
+        /no such element: Unable to locate element: {"method":"([^"]+)","selector":"([^"]+)"}/i
+      ]
+      
+      patterns.each do |pattern|
+        match = message.match(pattern)
+        if match
+          selector_type = match[1].strip
+          selector_value = match[2].strip
+          
+          info[:selector_type] = selector_type
+          info[:selector_value] = selector_value.gsub(/['"]/, '')
+          return info
+        end
+      end
+      info
+    end
+
+    def self.find_similar_elements(doc, failed_info, platform)
+      similar_elements = []
+      doc.xpath('//*').each do |node|
+        next if node.name == 'hierarchy'
+        attrs = node.attributes.transform_values(&:value)
+        
+        is_similar = case platform
+        when 'android'
+          (attrs['resource-id']&.include?(failed_info[:selector_value]) ||
+           attrs['text']&.include?(failed_info[:selector_value]) ||
+           attrs['content-desc']&.include?(failed_info[:selector_value]))
+        when 'ios'
+          (attrs['accessibility-id']&.include?(failed_info[:selector_value]) ||
+           attrs['label']&.include?(failed_info[:selector_value]) ||
+           attrs['name']&.include?(failed_info[:selector_value]))
+        else
+          false
+        end
+
+        if is_similar
+          name = self.suggest_name(node.name, attrs)
+          locators = self.xpath_generator(node.name, attrs, platform)
+          similar_elements << { name: name, locators: locators }
+        end
+      end
+      similar_elements
+    end
     
     def self.truncate(value)
       return value unless value.is_a?(String)
@@ -93,9 +165,22 @@ module AppiumFailureHelper
     def self.suggest_name(tag, attrs)
       type = tag.split('.').last
       pfx = PREFIX[tag] || PREFIX[type] || 'elm'
-      name = attrs['content-desc'] || attrs['text'] || attrs['resource-id'] || attrs['label'] || attrs['name'] || 'unknown' || type
-      name = truncate(name.strip.gsub(/[^0-9a-z]/, '').split.map(&:capitalize).join)
-      "#{pfx}#{name}"
+      name_base = nil
+      
+      ['content-desc', 'text', 'resource-id', 'label', 'name'].each do |attr_key|
+        value = attrs[attr_key]
+        if value.is_a?(String) && !value.empty?
+          name_base = value
+          break
+        end
+      end
+      
+      name_base ||= type
+      
+      truncated_name = truncate(name_base)
+      sanitized_name = truncated_name.gsub(/[^a-zA-Z0-9\s]/, ' ').split.map(&:capitalize).join
+      
+      "#{pfx}#{sanitized_name}"
     end
 
     def self.xpath_generator(tag, attrs, platform)
@@ -112,25 +197,21 @@ module AppiumFailureHelper
     def self.generate_android_xpaths(tag, attrs)
       locators = []
       
-      # Estratégia 1: Combinação de atributos
       if attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'resource_id_and_text', locator: "//#{tag}[@resource-id\"#{attrs['resource-id']}\" and @text=\"#{self.truncate(attrs['text'])}\"]" }
+        locators << { strategy: 'resource_id_and_text', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\" and @text=\"#{self.truncate(attrs['text'])}\"]" }
       elsif attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['content-desc'] && !attrs['content-desc'].empty?
         locators << { strategy: 'resource_id_and_content_desc', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\" and @content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
 
-      # Estratégia 2: ID único
       if attrs['resource-id'] && !attrs['resource-id'].empty?
         locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\"]" }
       end
 
-      # Estratégia 3: starts-with para IDs dinâmicos
       if attrs['resource-id'] && attrs['resource-id'].include?(':id/')
         id_part = attrs['resource-id'].split(':id/').last
         locators << { strategy: 'starts_with_resource_id', locator: "//#{tag}[starts-with(@resource-id, \"#{id_part}\")]" }
       end
 
-      # Estratégia 4: Texto e content-desc como identificadores
       if attrs['text'] && !attrs['text'].empty?
         locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}\"]" }
       end
@@ -138,7 +219,6 @@ module AppiumFailureHelper
         locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
 
-      # Fallback genérico (sempre adicionado)
       locators << { strategy: 'generic_tag', locator: "//#{tag}" }
 
       locators
@@ -147,17 +227,14 @@ module AppiumFailureHelper
     def self.generate_ios_xpaths(tag, attrs)
       locators = []
 
-      # Estratégia 1: Combinação de atributos
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? && attrs['label'] && !attrs['label'].empty?
         locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}\"]" }
       end
 
-      # Estratégia 2: ID único
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
         locators << { strategy: 'accessibility_id', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\"]" }
       end
 
-      # Estratégia 3: label, name ou value
       if attrs['label'] && !attrs['label'].empty?
         locators << { strategy: 'label', locator: "//#{tag}[@label=\"#{self.truncate(attrs['label'])}\"]" }
       end
@@ -165,7 +242,6 @@ module AppiumFailureHelper
         locators << { strategy: 'name', locator: "//#{tag}[@name=\"#{self.truncate(attrs['name'])}\"]" }
       end
 
-      # Fallback genérico (sempre adicionado)
       locators << { strategy: 'generic_tag', locator: "//#{tag}" }
 
       locators
@@ -177,13 +253,12 @@ module AppiumFailureHelper
         locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\"]" }
       end
       if attrs['content-desc'] && !attrs['content-desc'].empty?
-        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}']" }
       end
       if attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}\"]" }
+        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}']" }
       end
 
-      # Fallback genérico (sempre adicionado)
       locators << { strategy: 'generic_tag', locator: "//#{tag}" }
       
       locators
