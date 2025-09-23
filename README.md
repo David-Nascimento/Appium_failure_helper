@@ -1,43 +1,34 @@
 # Appium Failure Helper
 
-Este módulo Ruby foi projetado para auxiliar na **análise de falhas em testes de automação Appium**. Ao ser invocado, ele captura o estado da aplicação no momento da falha e gera um conjunto de artefatos de diagnóstico, facilitando a identificação da causa raiz do problema e a sugestão de novos localizadores de elementos.
+Este módulo Ruby foi projetado para ser uma ferramenta de diagnóstico inteligente para falhas em testes de automação mobile com **Appium**. Ele automatiza a captura de artefatos de depuração e a geração de sugestões de localizadores de elementos, eliminando a necessidade de usar o Appium Inspector.
 
 ## Funcionalidades Principais
 
-* **Captura de Screenshot:** Salva uma imagem PNG da tela do dispositivo no momento da falha.
-
-* **Captura de Page Source:** Salva o XML do `page_source` completo, representando a hierarquia de elementos da tela.
-
-* **Geração de Sugestões de Elementos:** Analisa o `page_source` e gera um arquivo `.yaml` com sugestões de nomes e caminhos XPath para os elementos visíveis na tela.
+* **Análise de Falha Automatizada:** Captura o estado da aplicação no momento da falha.
+* **Captura de Artefatos:** Salva um **screenshot** da tela e o **XML completo do `page_source`** em uma pasta dedicada por falha.
+* **Geração de Localizadores Inteligente:** Percorre a árvore de elementos e gera um **relatório YAML** com sugestões de XPaths otimizados para cada elemento.
+* **Lógica de XPath Otimizada:** Utiliza as melhores práticas para cada plataforma (**Android e iOS**), priorizando os localizadores mais estáveis e combinando atributos para alta especificidade.
+* **Organização de Saída:** Cria uma pasta com um carimbo de data/hora para cada falha (`/failure_AAAA_MM_DD_HHMMSS`), mantendo os arquivos organizados.
+* **Contexto de Elementos:** O relatório YAML agora inclui o **XPath do elemento pai (`parent_locator`)**, fornecendo contexto crucial para a depuração e construção de Page Objects.
 
 ## Como Funciona
 
-A lógica central do módulo `AppiumFailureHelper` é acionada por um evento de falha no seu framework de testes (ex: Cucumber `After` hook). A função `handler_failure` executa as seguintes etapas:
+A lógica do `AppiumFailureHelper` é ativada por um evento de falha em seu framework de testes (ex: Cucumber `After` hook). O método `handler_failure` executa as seguintes etapas:
 
-1. **Criação de Diretório:** Garante que a pasta `screenshots/` exista para armazenar os artefatos.
-
-2. **Captura de Screenshot e Page Source:** Utiliza o driver do Appium para obter o screenshot e o XML do `page_source`, salvando-os com um timestamp para evitar sobrescrever arquivos.
-
-3. **Análise com Nokogiri:** O XML do `page_source` é parseado utilizando a gem `Nokogiri`.
-
-4. **Processamento de Elementos:** O código itera sobre cada nó do XML (exceto o nó raiz 'hierarchy') e extrai atributos-chave como `resource-id`, `content-desc` e `text`.
-
-5. **Geração de Nomes e XPath:**
-
-   * `suggest_name`: Constrói um nome descritivo para cada elemento, utilizando prefixos comuns (`btn`, `txt`, `input`, etc.) e o valor dos atributos principais.
-
-   * `xpath_generator`: Prioriza atributos mais confiáveis (`resource-id`, `content-desc`, `text`) para gerar um XPath robusto.
-
-6. **Saída Final:** O resultado é um arquivo `.yaml` contendo uma lista formatada de sugestões de locators no formato `["nome_sugerido", "xpath", "caminho_xpath"]`.
+1.  Cria um diretório de saída exclusivo.
+2.  Captura o screenshot e o `page_source` do driver.
+3.  Determina a plataforma do dispositivo a partir das capacidades do driver.
+4.  Itera sobre cada nó do `page_source` e, para cada um, chama a lógica de geração de XPath e de nome.
+5.  A lógica de XPath utiliza um conjunto de estratégias priorizadas para cada plataforma, como **combinação de atributos** (`@resource-id` e `@text`) e o uso de `starts-with()` para elementos dinâmicos.
+6.  Salva um arquivo `.yaml` estruturado, contendo o nome sugerido, o tipo (`xpath`) e o localizador para cada elemento.
 
 ## Uso
 
-Para usar este helper, integre-o ao seu framework de testes. Um exemplo comum é utilizá-lo em um hook `After` do Cucumber:
+Para usar este helper, integre-o ao seu framework de testes. Um exemplo comum é utilizá-lo em um hook `After` do Cucumber, passando o objeto de driver do Appium.
 
 **`features/support/hooks.rb`**
-
-```
-require 'caminho/para/o/seu/modulo' # Ajuste o caminho
+```ruby
+require 'appium_failure_helper'
 
 After do |scenario|
   if scenario.failed?
