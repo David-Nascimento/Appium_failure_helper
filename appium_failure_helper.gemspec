@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Helper to capture Appium failure and extract elements information from page source"
   spec.description = "Appium Failure Helper is a Ruby gem that provides utilities to capture failures during Appium test executions. It extracts and saves relevant information from the page source, including screenshots and element details, to aid in debugging and analysis."
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.1.0"
+  spec.required_ruby_version = ">= 3.0.0"
   spec.homepage      = "https://github.com/David-Nascimento/Appium_failure_helper"
 
   # Specify which files should be added to the gem when it is released.
