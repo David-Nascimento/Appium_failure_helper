@@ -114,28 +114,28 @@ module AppiumFailureHelper
       
       # Estratégia 1: Combinação de atributos
       if attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'resource_id_and_text', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}' and @text='#{self.truncate(attrs['text'])}']" }
+        locators << { strategy: 'resource_id_and_text', locator: "//#{tag}[@resource-id\"#{attrs['resource-id']}\" and @text=\"#{self.truncate(attrs['text'])}\"]" }
       elsif attrs['resource-id'] && !attrs['resource-id'].empty? && attrs['content-desc'] && !attrs['content-desc'].empty?
-        locators << { strategy: 'resource_id_and_content_desc', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}' and @content-desc='#{self.truncate(attrs['content-desc'])}']" }
+        locators << { strategy: 'resource_id_and_content_desc', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\" and @content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
 
       # Estratégia 2: ID único
       if attrs['resource-id'] && !attrs['resource-id'].empty?
-        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}']" }
+        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\"]" }
       end
 
       # Estratégia 3: starts-with para IDs dinâmicos
       if attrs['resource-id'] && attrs['resource-id'].include?(':id/')
         id_part = attrs['resource-id'].split(':id/').last
-        locators << { strategy: 'starts_with_resource_id', locator: "//#{tag}[starts-with(@resource-id, '#{id_part}')]" }
+        locators << { strategy: 'starts_with_resource_id', locator: "//#{tag}[starts-with(@resource-id, \"#{id_part}\")]" }
       end
 
       # Estratégia 4: Texto e content-desc como identificadores
       if attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'text', locator: "//#{tag}[@text='#{self.truncate(attrs['text'])}']" }
+        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}\"]" }
       end
       if attrs['content-desc'] && !attrs['content-desc'].empty?
-        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc='#{self.truncate(attrs['content-desc'])}']" }
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
 
       # Fallback genérico (sempre adicionado)
@@ -149,20 +149,20 @@ module AppiumFailureHelper
 
       # Estratégia 1: Combinação de atributos
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? && attrs['label'] && !attrs['label'].empty?
-        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}' and @label='#{self.truncate(attrs['label'])}']" }
+        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}\"]" }
       end
 
       # Estratégia 2: ID único
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
-        locators << { strategy: 'accessibility_id', locator: "//#{tag}[@accessibility-id='#{attrs['accessibility-id']}']" }
+        locators << { strategy: 'accessibility_id', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\"]" }
       end
 
       # Estratégia 3: label, name ou value
       if attrs['label'] && !attrs['label'].empty?
-        locators << { strategy: 'label', locator: "//#{tag}[@label='#{self.truncate(attrs['label'])}']" }
+        locators << { strategy: 'label', locator: "//#{tag}[@label=\"#{self.truncate(attrs['label'])}\"]" }
       end
       if attrs['name'] && !attrs['name'].empty?
-        locators << { strategy: 'name', locator: "//#{tag}[@name='#{self.truncate(attrs['name'])}']" }
+        locators << { strategy: 'name', locator: "//#{tag}[@name=\"#{self.truncate(attrs['name'])}\"]" }
       end
 
       # Fallback genérico (sempre adicionado)
@@ -174,13 +174,13 @@ module AppiumFailureHelper
     def self.generate_unknown_xpaths(tag, attrs)
       locators = []
       if attrs['resource-id'] && !attrs['resource-id'].empty?
-        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id='#{attrs['resource-id']}']" }
+        locators << { strategy: 'resource_id', locator: "//#{tag}[@resource-id=\"#{attrs['resource-id']}\"]" }
       end
       if attrs['content-desc'] && !attrs['content-desc'].empty?
-        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc='#{self.truncate(attrs['content-desc'])}']" }
+        locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
       if attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'text', locator: "//#{tag}[@text='#{self.truncate(attrs['text'])}']" }
+        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}\"]" }
       end
 
       # Fallback genérico (sempre adicionado)
