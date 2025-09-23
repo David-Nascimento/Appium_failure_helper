@@ -49,9 +49,11 @@ module AppiumFailureHelper
         FileUtils.mkdir_p(output_folder)
         @@logger.info("Pasta de saída criada: #{output_folder}")
         
+        # Captura o Base64 e salva o PNG
+        screenshot_base64 = driver.screenshot_as(:base64)
         screenshot_path = "#{output_folder}/screenshot_#{timestamp}.png"
         File.open(screenshot_path, 'wb') do |f|
-          f.write(Base64.decode64(driver.screenshot_as(:base64)))
+          f.write(Base64.decode64(screenshot_base64))
         end
         @@logger.info("Screenshot salvo em #{screenshot_path}")
 
@@ -106,6 +108,13 @@ module AppiumFailureHelper
         end
         @@logger.info("Dump completo da página salvo em #{full_dump_yaml_path}")
 
+        # --- Geração do Relatório HTML (3) ---
+        html_report_path = "#{output_folder}/report_#{timestamp}.html"
+        html_content = self.generate_html_report(targeted_report, all_elements_suggestions, screenshot_base64, platform, timestamp)
+        File.write(html_report_path, html_content)
+        @@logger.info("Relatório HTML completo salvo em #{html_report_path}")
+
+
       rescue => e
         @@logger.error("Erro ao capturar detalhes da falha: #{e.message}\n#{e.backtrace.join("\n")}")
       end
@@ -120,7 +129,120 @@ module AppiumFailureHelper
         "#{datetime.strftime('%Y-%m-%d %H:%M:%S')} [#{severity}] #{msg}\n"
       end
     end
+
+    # --- LÓGICA DE GERAÇÃO DE HTML ---
+    def self.generate_html_report(targeted_report, all_suggestions, screenshot_base64, platform, timestamp)
+      
+      # Helper para formatar localizadores
+      locators_html = lambda do |locators|
+        locators.map do |loc|
+          "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{loc[:strategy].upcase.gsub('_', ' ')}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{loc[:locator]}</span></li>"
+        end.join
+      end
+
+      # Helper para criar a lista de todos os elementos
+      all_elements_html = lambda do |elements|
+        elements.map do |el|
+          "<div class='border-b border-gray-200 py-3'><p class='font-semibold text-sm text-gray-800 mb-1'>#{el[:name]}</p><ul class='text-xs space-y-1'>#{locators_html.call(el[:locators])}</ul></div>"
+        end.join
+      end
+
+      # Template HTML usando um heredoc
+      <<~HTML_REPORT
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Relatório de Falha Appium - #{timestamp}</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; }
+                .tab-content { display: none; }
+                .tab-content.active { display: block; }
+                .tab-button.active { background-color: #4f46e5; color: white; }
+                .tab-button:not(.active):hover { background-color: #e0e7ff; }
+            </style>
+        </head>
+        <body class="bg-gray-50 p-8">
+            <div class="max-w-7xl mx-auto">
+                <header class="mb-8 pb-4 border-b border-gray-300">
+                    <h1 class="text-3xl font-bold text-gray-800">Diagnóstico de Falha Automatizada</h1>
+                    <p class="text-sm text-gray-500">Relatório gerado em: #{timestamp} | Plataforma: #{platform.upcase}</p>
+                </header>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1">
+                        <div class="bg-white p-4 rounded-lg shadow-xl mb-6 border border-red-200">
+                            <h2 class="text-xl font-bold text-red-600 mb-4">Elemento com Falha</h2>
+                            <p class="text-sm text-gray-700 font-medium mb-2">Tipo de Seletor: <span class="font-mono text-xs bg-red-100 p-1 rounded">#{targeted_report[:failed_element][:selector_type] || 'Desconhecido'}</span></p>
+                            <p class="text-sm text-gray-700 font-medium">Valor Buscado: <span class="font-mono text-xs bg-red-100 p-1 rounded break-all">#{targeted_report[:failed_element][:selector_value] || 'N/A'}</span></p>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-lg shadow-xl">
+                            <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
+                            <img src="data:image/png;base64,#{screenshot_base64}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2">
+                        <div class="bg-white rounded-lg shadow-xl">
+                            <div class="flex border-b border-gray-200">
+                                <button class="tab-button active px-4 py-3 text-sm font-medium rounded-tl-lg" data-tab="similar">Sugestões de Reparo (#{targeted_report[:similar_elements].size})</button>
+                                <button class="tab-button px-4 py-3 text-sm font-medium text-gray-600" data-tab="all">Dump Completo da Página (#{all_suggestions.size} Elementos)</button>
+                            </div>
+
+                            <div class="p-6">
+                                <div id="similar" class="tab-content active">
+                                    <h3 class="text-lg font-semibold text-indigo-700 mb-4">Elementos Semelhantes (Melhores Alternativas)</h3>
+                                    #{"<p class='text-gray-500'>Nenhuma alternativa semelhante foi encontrada na página. O elemento pode ter sido removido ou o localizador está incorreto.</p>" if targeted_report[:similar_elements].empty?}
+                                    <div class="space-y-4">
+                                        #{targeted_report[:similar_elements].map { |el| "<div class='border border-indigo-100 p-3 rounded-lg bg-indigo-50'><p class='font-bold text-indigo-800 mb-2'>#{el[:name]}</p><ul>#{locators_html.call(el[:locators])}</ul></div>" }.join}
+                                    </div>
+                                </div>
+
+                                <div id="all" class="tab-content">
+                                    <h3 class="text-lg font-semibold text-indigo-700 mb-4">Dump Completo de Todos os Elementos da Tela</h3>
+                                    <div class="max-h-[600px] overflow-y-auto space-y-2">
+                                        #{all_elements_html.call(all_suggestions)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                    const tabs = document.querySelectorAll('.tab-button');
+                    const contents = document.querySelectorAll('.tab-content');
+
+                    tabs.forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            const target = tab.getAttribute('data-tab');
+
+                            tabs.forEach(t => t.classList.remove('active', 'text-white', 'text-gray-600', 'hover:bg-indigo-700'));
+                            contents.forEach(c => c.classList.remove('active'));
+
+                            tab.classList.add('active', 'text-white', 'bg-indigo-600');
+                            document.getElementById(target).classList.add('active');
+                        });
+                    });
+                     // Set initial active state for styling consistency
+                    const activeTab = document.querySelector('.tab-button[data-tab="similar"]');
+                    activeTab.classList.add('active', 'text-white', 'bg-indigo-600');
+                });
+            </script>
+        </body>
+        </html>
+      HTML_REPORT
+    end
+
+    # --- Métodos de Suporte Existentes ---
     
+    # ... (métodos setup_logger, extract_info_from_exception, find_similar_elements, etc.)
+
     def self.extract_info_from_exception(exception)
       message = exception.message
       info = {}
@@ -243,7 +365,7 @@ module AppiumFailureHelper
       locators = []
 
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty? && attrs['label'] && !attrs['label'].empty?
-        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}']" }
+        locators << { strategy: 'accessibility_id_and_label', locator: "//#{tag}[@accessibility-id=\"#{attrs['accessibility-id']}\" and @label=\"#{self.truncate(attrs['label'])}\"]" }
       end
 
       if attrs['accessibility-id'] && !attrs['accessibility-id'].empty?
@@ -271,12 +393,20 @@ module AppiumFailureHelper
         locators << { strategy: 'content_desc', locator: "//#{tag}[@content-desc=\"#{self.truncate(attrs['content-desc'])}\"]" }
       end
       if attrs['text'] && !attrs['text'].empty?
-        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}']" }
+        locators << { strategy: 'text', locator: "//#{tag}[@text=\"#{self.truncate(attrs['text'])}\"]" }
       end
 
       locators << { strategy: 'generic_tag', locator: "//#{tag}" }
       
       locators
+    end
+
+    def self.setup_logger
+      @@logger = Logger.new(STDOUT)
+      @@logger.level = Logger::INFO
+      @@logger.formatter = proc do |severity, datetime, progname, msg|
+        "#{datetime.strftime('%Y-%m-%d %H:%M:%S')} [#{severity}] #{msg}\n"
+      end
     end
   end
 end
