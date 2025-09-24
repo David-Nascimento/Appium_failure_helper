@@ -109,7 +109,7 @@ module AppiumFailureHelper
             </header>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div class="lg:col-span-1">
-                #{de_para_html}
+                #{de_para_rb_html}
                 <div class="bg-white p-4 rounded-lg shadow-xl mb-6 border border-red-200">
                   <h2 class="text-xl font-bold text-red-600 mb-4">Elemento com Falha</h2>
                   #{failed_info_content}
