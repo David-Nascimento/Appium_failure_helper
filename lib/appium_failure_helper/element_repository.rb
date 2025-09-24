@@ -1,49 +1,57 @@
 module AppiumFailureHelper
   module ElementRepository
+  
+    def self.load_all
+      elements_map = load_from_ruby_file
+      elements_map.merge!(load_all_from_yaml)
+      elements_map
+    end
+
+    private
+
+    def self.load_from_ruby_file
+      map = {}
+      # ALTERADO: Lê os caminhos a partir da configuração central.
+      config = AppiumFailureHelper.configuration
+      file_path = File.join(Dir.pwd, config.elements_path, config.elements_ruby_file)
+      
+      return map unless File.exist?(file_path)
+
+      # ... (o resto do método continua igual)
+      begin
+        require file_path
+        instance = OnboardingElementLists.new
+        unless instance.respond_to?(:elements)
+          Utils.logger.warn("AVISO: A classe OnboardingElementLists não expõe um `attr_reader :elements`.")
+          return map
+        end
+        instance.elements.each do |key, value|
+          map[key.to_s] = { 'tipoBusca' => value[0], 'valor' => value[1] }
+        end
+      rescue => e
+        Utils.logger.warn("AVISO: Erro ao processar o arquivo #{file_path}: #{e.message}")
+      end
+      
+      map
+    end
+    
     def self.load_all_from_yaml
       elements_map = {}
-      # Procura em todo o diretório de trabalho atual por arquivos .yaml
-      glob_path = File.join(Dir.pwd, '**', '*.yaml')
+      # ALTERADO: Lê o caminho base da configuração central.
+      config = AppiumFailureHelper.configuration
+      glob_path = File.join(Dir.pwd, config.elements_path, '**', '*.yaml')
       
       Dir.glob(glob_path).each do |file|
-        # Evita ler os próprios relatórios gerados
+        # ... (o resto do método continua igual) ...
         next if file.include?('reports_failure')
-        
         begin
           data = YAML.load_file(file)
-          if data.is_a?(Hash)
-            data.each do |key, value|
-              if value.is_a?(Hash) && value['tipoBusca'] && value['value']
-                elements_map[key] = value
-              end
-            end
-          end
+          elements_map.merge!(data) if data.is_a?(Hash)
         rescue => e
           Utils.logger.warn("Aviso: Erro ao carregar o arquivo YAML #{file}: #{e.message}")
         end
       end
       elements_map
-    end
-
-    # NOVO: Método para verificar a existência de um elemento em um arquivo .rb
-    def self.find_in_ruby_file(element_name, path = 'elements/elements.rb')
-      return { found: false, path: path, reason: "Arquivo não encontrado" } unless File.exist?(path)
-
-      begin
-        content = File.read(path)
-        # Regex flexível para encontrar definições como:
-        # def nome_do_elemento
-        # element :nome_do_elemento
-        # element('nome_do_elemento')
-        if content.match?(/def #{element_name}|element[ |\(]['|:]#{element_name}/)
-          return { found: true, path: path }
-        else
-          return { found: false, path: path, reason: "Definição não encontrada" }
-        end
-      rescue => e
-        Utils.logger.warn("Aviso: Erro ao ler o arquivo Ruby #{path}: #{e.message}")
-        return { found: false, path: path, reason: "Erro de leitura" }
-      end
     end
   end
 end

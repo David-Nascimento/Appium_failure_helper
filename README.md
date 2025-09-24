@@ -1,290 +1,137 @@
-# Appium Failure Helper
+# Diagnóstico Inteligente de Falhas Appium
 
-[![Ruby](https://img.shields.io/badge/language-ruby-red.svg)](https://www.ruby-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-beta-yellow.svg)]()
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Gem Version](https://img.shields.io/badge/gem-v1.1.0-blue)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-**Appium Failure Helper** é um módulo Ruby destinado a automatizar diagnóstico de falhas em testes de automação mobile com **Appium**. O objetivo é reduzir tempo de triagem, fornecer localizadores confiáveis e coletar artefatos de depuração sem depender do Appium Inspector.
+Uma ferramenta robusta para diagnosticar falhas em testes automatizados com Appium, transformando erros de `NoSuchElementException` em relatórios interativos e inteligentes. Chega de perder tempo depurando seletores quebrados; deixe que a análise automatizada faça o trabalho pesado por você.
 
----
+## ✨ Principais Funcionalidades
 
-## Sumário
-- [Visão Geral](#visão-geral)
-- [Funcionalidades](#funcionalidades)
-- [Arquitetura e Fluxo](#arquitetura-e-fluxo)
-- [Instalação](#instalação)
-- [Configuração (opcional)](#configuração-opcional)
-- [API Pública / Integração](#api-pública--integração)
-- [Exemplos de Uso](#exemplos-de-uso)
-  - [Cucumber (hook After)](#cucumber-hook-after)
-  - [RSpec (after :each)](#rspec-after-each)
-- [Formato dos Artefatos Gerados](#formato-dos-artefatos-gerados)
-- [Lógica de Geração de XPaths (detalhada)](#lógica-de-geração-de-xpaths-detalhada)
-- [Tratamento de Dados e Deduplicação](#tratamento-de-dados-e-deduplicação)
-- [Relatório HTML Interativo](#relatório-html-interativo)
-- [Logging e Observabilidade](#logging-e-observabilidade)
-- [Testes e Qualidade](#testes-e-qualidade)
-- [Roadmap e Contribuição](#roadmap-e-contribuição)
-- [Licença](#licença)
+* **Relatório HTML Interativo:** Gera um relatório visual completo a cada falha, com screenshot, análise detalhada e dump de todos os elementos da tela.
+* **Análise de Mapeamento ("De/Para"):** Verifica automaticamente se o elemento que falhou está definido em alguma fonte de dados do projeto, como:
+    * **Arquivos `.yaml`** gerados dinamicamente.
+    * **Arquivos de elementos Ruby (`.rb`)** customizáveis.
+* **Sugestão por Similaridade:** Utiliza o algoritmo de Levenshtein para encontrar elementos na tela que são "parecidos" com o localizador que falhou, sugerindo correções.
+* **Altamente Configurável:** Permite que os projetos definam seus próprios caminhos e nomes de arquivos de elementos, tornando a ferramenta totalmente reutilizável.
+* **Arquitetura Modular:** O código é limpo, organizado e fácil de estender, seguindo o Princípio da Responsabilidade Única.
+* **Suporte Multiplataforma:** A lógica de análise e sugestão funciona tanto para **Android** quanto para **iOS**.
 
----
+## 🚀 Instalação
 
-## Visão Geral
-
-No momento em que um teste falha, o módulo realiza, de forma atômica e thread-safe:
-1. captura de screenshot,
-2. extração do `page_source` completo (XML),
-3. varredura da árvore de elementos para gerar localizadores sugeridos,
-4. escrita de dois YAMLs (focado e completo) e um relatório HTML que agrega tudo.
-
-Todos os artefatos são salvos em uma pasta timestamped (formato `YYYY_MM_DD_HHMMSS`) dentro de `reports_failure/`.
-
----
-
-## Funcionalidades
-
-- Captura automática de screenshot PNG.
-- Export completo de `page_source` em XML.
-- Geração de `failure_analysis_*.yaml` (focado no elemento que falhou).
-- Geração de `all_elements_dump_*.yaml` (todos os elementos com localizadores sugeridos).
-- Relatório HTML interativo que combine screenshot, XML formatado e lista de localizadores.
-- Geração de XPaths otimizados para **Android** e **iOS**.
-- Truncamento de atributos longos (configurável).
-- Eliminação de elementos duplicados e normalização de atributos.
-- Logging via `Logger` do Ruby (Níveis: DEBUG/INFO/WARN/ERROR).
-- Configuração via bloco `configure` (opcional).
-
----
-
-## Arquitetura e Fluxo
-
-1. **Hook de Testes** (Cucumber/RSpec) → invoca `Capture.handler_failure(driver, exception)`
-2. **Capture.handler_failure**:
-   - estabelece pasta de saída com timestamp;
-   - chama `driver.screenshot` (salva PNG);
-   - chama `driver.page_source` (salva XML);
-   - percorre XML e cria árvore de elementos;
-   - para cada elemento gera candidate XPaths aplicando regras por plataforma;
-   - grava `failure_analysis_*.yaml` (prioriza elemento indicado) e `all_elements_dump_*.yaml`;
-   - monta `report_*.html` agregando tudo.
-3. Logs detalhados emitidos durante a execução.
-
----
-
-## Instalação
-
-**Como gem (exemplo):**
-
-Adicione ao `Gemfile` do projeto:
+Adicione esta linha ao `Gemfile` do seu projeto de automação:
 
 ```ruby
-gem 'appium_failure_helper', '~> 0.1.0'
+gem 'appium_failure_helper' # (ou o nome que você der para a sua gem)
 ```
 
-Depois:
+E então execute no seu terminal:
 
-```bash
+```sh
 bundle install
 ```
 
-**Ou manual (para uso local):**
+## ⚙️ Configuração (Opcional)
 
-Coloque o diretório `appium_failure_helper/` dentro do `lib/` do projeto e faça:
+Para tornar a ferramenta flexível e adaptável a diferentes projetos, você pode configurar os caminhos onde os elementos são buscados. Crie um bloco de configuração no seu arquivo de inicialização (ex: `features/support/env.rb`).
 
-```ruby
-require_relative 'lib/appium_failure_helper'
-```
-
----
-
-## API Pública / Integração
-
-### `AppiumFailureHelper::Capture`
+**Se nenhuma configuração for fornecida, a ferramenta usará os valores padrão.**
 
 ```ruby
-# handler_failure(driver, exception, options = {})
-# - driver: objeto de sessão Appium (Selenium::WebDriver / Appium::Driver)
-# - exception: exceção capturada no momento da falha
-# - options: hash com overrides (ex: output_dir:)
-AppiumFailureHelper::Capture.handler_failure(appium_driver, scenario.exception)
-```
+# Em features/support/env.rb
 
-### Configuração global
+AppiumFailureHelper.configure do |config|
+  # Caminho para a pasta que contém os arquivos de elementos.
+  # Padrão: 'features/elements'
+  config.elements_path = 'caminho/para/sua/pasta/de/elementos'
 
-```ruby
-AppiumFailureHelper.configure do |c|
-  # ver bloco de configuração acima
+  # Nome do arquivo principal de elementos Ruby.
+  # Padrão: 'elementLists.rb'
+  config.elements_ruby_file = 'meu_arquivo_de_elementos.rb'
 end
 ```
 
----
+### Opções Disponíveis
 
-## Exemplos de Uso
+| Parâmetro             | Descrição                                                                      | Valor Padrão             |
+| --------------------- | ------------------------------------------------------------------------------ | ------------------------ |
+| `elements_path`       | Path relativo à raiz do projeto para a pasta que contém os arquivos de elementos. | `'features/elements'`    |
+| `elements_ruby_file`  | Nome do arquivo Ruby principal que define os elementos dentro da `elements_path`. | `'elementLists.rb'`      |
 
-### Cucumber (hook `After`)
+## 🛠️ Uso no Cucumber
+
+A integração é feita através de um hook `After` no seu ambiente de testes.
+
+**Exemplo completo para `features/support/env.rb`:**
 
 ```ruby
-# features/support/hooks.rb
+# features/support/env.rb
+
+require 'appium_lib'
+require 'cucumber'
+
+# 1. Carrega a sua ferramenta
 require 'appium_failure_helper'
 
+# 2. (Opcional) Configura os caminhos se forem diferentes do padrão
+AppiumFailureHelper.configure do |config|
+  config.elements_path = 'features/elements'
+  config.elements_ruby_file = 'elementLists.rb'
+end
+
+# 3. Hook que executa após cada cenário de teste
 After do |scenario|
+  # Se o cenário falhou, aciona o seu helper
   if scenario.failed?
-    AppiumFailureHelper::Capture.handler_failure(appium_driver, scenario.exception)
+    puts "\n--- CENÁRIO FALHOU! ACIONANDO O DIAGNÓSTICO INTELIGENTE ---"
+    
+    # A chamada ao helper utiliza automaticamente as configurações definidas acima.
+    AppiumFailureHelper.handler_failure(@driver, scenario.exception)
+    
+    puts "--- HELPER FINALIZOU. VERIFIQUE A PASTA 'reports_failure' ---"
   end
 end
 ```
 
----
+## 📄 Entendendo o Relatório Gerado
 
-## Formato dos Artefatos Gerados
+Após uma falha, uma nova pasta será criada na raiz do seu projeto: `reports_failure/failure_[timestamp]`. Dentro dela, o arquivo mais importante é o `report_[...].html`.
 
-**Pasta:** `reports_failure/<TIMESTAMP>/`
+O relatório HTML é dividido em seções claras para um diagnóstico rápido:
 
-Arquivos gerados (ex.: TIMESTAMP = `2025_09_23_173045`):
+#### Análise de Mapeamento (Bloco Verde/Amarelo)
+Informa se o elemento que falhou foi encontrado nos seus arquivos de mapeamento (`.rb` ou `.yaml`).
+* **Bloco Verde (Sucesso):** Confirma que o elemento foi encontrado. Isso sugere que a definição está correta, e o problema pode ser de timing ou visibilidade na tela.
+* **Bloco Amarelo (Aviso):** Informa que o elemento **não foi encontrado**. Isso geralmente aponta para um erro de digitação no nome do elemento no seu código de teste.
 
-```
-screenshot_2025_09_23_173045.png
-page_source_2025_09_23_173045.xml
-failure_analysis_2025_09_23_173045.yaml
-all_elements_dump_2025_09_23_173045.yaml
-report_2025_09_23_173045.html
-```
+#### Elemento com Falha (Bloco Vermelho)
+Mostra exatamente qual `Tipo de Seletor` e `Valor Buscado` o Appium usou quando a falha ocorreu.
 
-### Exemplo (simplificado) de `failure_analysis_*.yaml`
+#### Screenshot da Falha
+Uma imagem exata da tela no momento do erro.
 
-```yaml
-failed_element:
-  platform: android
-  summary:
-    class: android.widget.Button
-    resource_id: com.example:id/submit
-    text: "Enviar"
-  suggested_xpaths:
-    - "//android.widget.Button[@resource-id='com.example:id/submit']"
-    - "//android.widget.Button[contains(@text,'Enviar')]"
-  capture_metadata:
-    screenshot: screenshot_2025_09_23_173045.png
-    page_source: page_source_2025_09_23_173045.xml
-    timestamp: "2025-09-23T17:30:45Z"
-tips: "Priorize resource-id; se ausente, use accessibility id (content-desc) e class+text como fallback."
-```
+#### Sugestões de Reparo (Análise de Similaridade)
+Lista os elementos na tela com localizadores parecidos com o que falhou, com uma pontuação de similaridade. Ideal para corrigir erros de digitação nos seletores.
 
-### Exemplo (simplificado) de `all_elements_dump_*.yaml`
+#### Dump Completo da Página
+Uma lista interativa de **todos os elementos** visíveis na tela, com todos os seus possíveis localizadores.
 
-```yaml
-elements:
-  - id_hash: "a1b2c3..."
-    class: "android.widget.EditText"
-    resource_id: "com.example:id/input_email"
-    text: "example@example.com"
-    truncated_attributes:
-      hint: "Digite seu e-mail..."
-    suggested_xpaths:
-      - "//*[@resource-id='com.example:id/input_email']"
-      - "//android.widget.EditText[contains(@hint,'Digite seu e-mail')]"
-```
+## 🏛️ Arquitetura do Código
 
----
+O código é modular para facilitar a manutenção e a extensibilidade.
 
-## Lógica de Geração de XPaths (detalhada)
+* `configuration.rb`: Classe que armazena as opções configuráveis e seus valores padrão.
+* `handler.rb`: O **Maestro**. Orquestra as chamadas para os outros módulos.
+* `analyzer.rb`: O **Analista**. Processa a mensagem de erro e calcula a similaridade.
+* `element_repository.rb`: O **Repositório**. Encontra e carrega as definições de elementos de arquivos `.yaml` e `.rb` usando os caminhos configurados.
+* `page_analyzer.rb`: O **Leitor de Tela**. Processa o XML da página para extrair elementos e sugerir nomes/localizadores.
+* `report_generator.rb`: O **Gerador**. Consolida todos os dados e cria os arquivos de relatório.
+* `utils.rb`: Funções auxiliares (Logger, etc.).
 
-**Princípios gerais**
-1. Priorizar identificadores estáveis (resource-id no Android / accessibility id no iOS).
-2. Evitar XPaths com `index` como primeira opção (usado apenas como último recurso).
-3. Combinar atributos quando necessário para aumentar a especificidade e evitar colisões.
-4. Normalizar espaços e truncar textos longos.
+## 🤝 Como Contribuir
 
-**Estratégias por plataforma (ordem de preferência)**
+Encontrou um bug ou tem uma ideia para uma nova funcionalidade? Abra uma *Issue* no repositório do projeto. Pull Requests são sempre bem-vindos!
 
-- **Android**
-  1. `resource-id` → `//*[@resource-id='com.pkg:id/id']`
-  2. `content-desc` / `contentDescription` (accessibility) → `//*[@content-desc='x']`
-  3. `class` + `text` → `//android.widget.TextView[@class='...' and contains(normalize-space(@text),'...')]`
-  4. `class` + raça de atributos (combinações: enabled, clickable, package)
-  5. fallback: `//android.widget.Button[position()=n]` (último recurso)
+## 📜 Licença
 
-- **iOS**
-  1. `accessibility id` (nome accessibility) → `//*[@name='Submit']`
-  2. `label` / `value` → `//*[contains(@label,'...')]`
-  3. `type` + `label` → `//XCUIElementTypeButton[@label='OK']`
-  4. fallback: hierarquia / indices
-
-**Exemplo de XPath combinado (alta especificidade):**
-
-```xpath
-//android.widget.Button[@resource-id='com.example:id/submit' and contains(normalize-space(@text),'Enviar') and @clickable='true']
-```
-
----
-
-## Tratamento de Dados e Deduplicação
-
-- **Truncamento**: atributos com comprimento acima de `attr_truncate_length` são truncados com sufixo `...` para evitar poluição do YAML.
-- **Hash único por elemento**: é gerado um hash (sha1) baseado em conjunto de atributos relevantes (class+resource-id+content-desc+text) para identificar duplicados.
-- **Remoção de nulos**: atributos vazios ou nulos são omitidos nos YAMLs.
-- **Ordenação**: elementos no `all_elements_dump` são ordenados por prioridade de localizador (resource-id primeiro).
-
----
-
-## Relatório HTML Interativo
-
-O HTML gerado possui:
-- Visualização inline do `screenshot` (img tag),
-- Painel colapsável com o `page_source` (XML formatado e collapsible),
-- Lista navegável de elementos com seus `suggested_xpaths` (botões para copiar),
-- Ancoragem que permite focalizar: ao clicar em um XPath, realça o fragmento correspondente no XML (se possível),
-- Metadados e link rápido para os YAMLs.
-
-**Observação:** o HTML é gerado de forma estática — para realces dinâmicos é usado JavaScript simples embutido (sem dependências externas).
-
----
-
-## Logging e Observabilidade
-
-- Usa `Logger` padrão do Ruby:
-  - `DEBUG` para detalhamento completo (padrão em modo dev).
-  - `INFO` para resumo das ações realizadas.
-  - `WARN/ERROR` para problemas durante captura/escrita.
-- Exemplos de mensagens:
-  - `[INFO] Creating failure report folder: reports_failure/2025_09_23_173045`
-  - `[DEBUG] Captured 4123 elements from page_source`
-  - `[ERROR] Failed to write screenshot: Permission denied`
-
----
-
-## Testes e Qualidade
-
-- Estrutura de testes sugerida: RSpec + fixtures com dumps de `page_source` para validar a geração de XPaths.
-- Testes unitários para: truncamento, hash de deduplicação, geração de strategies, output YAML válido.
-- CI: incluir step que valide YAML/HTML gerados (lint) e execute testes RSpec.
-
----
-
-## Roadmap e Contribuição
-
-**Funcionalidades previstas**
-- Suporte a mapeamento visual (overlay) para apontar elemento sobre screenshot.
-- Export para outros formatos (JSON/CSV).
-- Integração com ferramentas de observabilidade (Sentry, Datadog).
-- Modo headless para gerar relatórios offline em pipelines.
-
-**Como contribuir**
-1. Fork no repositório.
-2. Crie branch com feature/bugfix.
-3. Abra PR com descrição técnica das mudanças e testes.
-4. Mantenha o estilo Ruby (RuboCop) e documentação atualizada.
-
----
-
-## Segurança e Privacidade
-
-- Evite capturar dados sensíveis em ambientes com PII. Implementar filtro por regex para mascarar dados (ex.: emails/telefones) antes de salvar YAMLs.
-- Recomendado: executar limpeza em ambientes de produção.
-
----
-
-## Licença
-
-MIT — veja o arquivo `LICENSE` para os termos.
-
----
+Este projeto é distribuído sob a licença MIT.
