@@ -39,7 +39,6 @@ module AppiumFailureHelper
       begin
         self.setup_logger unless @@logger
         
-        # Remove a pasta reports_failure ao iniciar uma nova execução
         FileUtils.rm_rf("reports_failure")
         @@logger.info("Pasta 'reports_failure' removida para uma nova execução.")
         
@@ -49,7 +48,6 @@ module AppiumFailureHelper
         FileUtils.mkdir_p(output_folder)
         @@logger.info("Pasta de saída criada: #{output_folder}")
         
-        # Captura o Base64 e salva o PNG
         screenshot_base64 = driver.screenshot_as(:base64)
         screenshot_path = "#{output_folder}/screenshot_#{timestamp}.png"
         File.open(screenshot_path, 'wb') do |f|
@@ -67,7 +65,6 @@ module AppiumFailureHelper
 
         failed_element_info = self.extract_info_from_exception(exception)
 
-        # --- Processamento de todos os elementos ---
         seen_elements = {}
         all_elements_suggestions = []
         doc.xpath('//*').each do |node|
@@ -85,7 +82,6 @@ module AppiumFailureHelper
           end
         end
 
-        # --- Geração do Relatório FOCADO (1) ---
         targeted_report = {
           failed_element: failed_element_info,
           similar_elements: [],
@@ -101,14 +97,12 @@ module AppiumFailureHelper
         end
         @@logger.info("Análise direcionada salva em #{targeted_yaml_path}")
 
-        # --- Geração do Relatório COMPLETO (2) ---
         full_dump_yaml_path = "#{output_folder}/all_elements_dump_#{timestamp}.yaml"
         File.open(full_dump_yaml_path, 'w') do |f|
           f.write(YAML.dump(all_elements_suggestions))
         end
         @@logger.info("Dump completo da página salvo em #{full_dump_yaml_path}")
 
-        # --- Geração do Relatório HTML (3) ---
         html_report_path = "#{output_folder}/report_#{timestamp}.html"
         html_content = self.generate_html_report(targeted_report, all_elements_suggestions, screenshot_base64, platform, timestamp)
         File.write(html_report_path, html_content)
@@ -122,38 +116,89 @@ module AppiumFailureHelper
     private
     
     def self.setup_logger
-      @@logger = Logger.new(STDOUT)
+      @@logger ||= Logger.new(STDOUT)
       @@logger.level = Logger::INFO
       @@logger.formatter = proc do |severity, datetime, progname, msg|
         "#{datetime.strftime('%Y-%m-%d %H:%M:%S')} [#{severity}] #{msg}\n"
       end
     end
     
-    def self.extract_info_from_exception(exception)
-      message = exception.message
-      info = {}
-      
-      # Corrigido: Usando múltiplos padrões para extração robusta (resolvendo o problema do YAML vazio)
-      patterns = [
-        /(?:could not be found|cannot find element) using (.+)=['"]?(.+)['"]?/i,
-        /no such element: Unable to locate element: {"method":"([^"]+)","selector":"([^"]+)"}/i,
-        /(?:An element with the selector |element with the selector |selector |element with the |element identified by )(.+?) (?:could not be found|was not found|not found|not be located)/i,
-        /(?:with the resource-id|with the accessibility-id) ['"](.+?)['"]/i
-      ]
-      
-      patterns.each do |pattern|
-        match = message.match(pattern)
-        if match
-          selector_value = match.captures.last.strip
-          selector_type = match[1]&.strip || 'Unknown'
-          
-          info[:selector_type] = selector_type
-          info[:selector_value] = selector_value.gsub(/['"]/, '')
-          return info
-        end
-      end
-      info
+  def self.extract_info_from_exception(exception)
+  message = exception.to_s
+  info = {}
+
+  # normaliza tipos capturados para nomes previsíveis
+  normalize_type = lambda do |t|
+    return 'unknown' unless t
+    t = t.to_s.downcase.strip
+    t = t.gsub(/["']/, '')
+    case t
+    when 'cssselector', 'css selector' then 'css'
+    when 'classname', 'class name' then 'class name'
+    when 'accessibilityid', 'accessibility-id', 'accessibility id' then 'accessibility-id'
+    when 'resourceid', 'resource-id', 'resource id', 'id' then 'resource-id'
+    when 'contentdesc', 'content-desc', 'content desc' then 'content-desc'
+    else
+      t.gsub(/\s+/, '_').gsub(/[^a-z0-9_\-]/, '')
     end
+  end
+
+  patterns = [
+    # ChromeDriver/Selenium JSON style:
+    # no such element: Unable to locate element: {"method":"xpath","selector":"//..."}
+    /no such element: Unable to locate element:\s*\{\s*["']?method["']?\s*:\s*["']?([^"'\}]+)["']?\s*,\s*["']?selector["']?\s*:\s*["']?([^"']+)["']?\s*\}/i,
+
+    # By.xpath: //..., By.id: "foo"
+    /By\.(xpath|id|css selector|cssSelector|name|class name|className):\s*['"]?(.+?)['"]?(?:\s|$)/i,
+
+    # Generic "using <type>=<value>" or using <type>: '<value>'
+    /using\s+([a-zA-Z0-9_\-:]+)\s*[=:]\s*['"]?(.+?)['"]?(?:\s|$)/i,
+
+    # "An element with the selector '...' was not found"
+    /An element with (?:the )?selector ['"](.+?)['"] (?:could not be found|was not found|not found|not be located)/i,
+
+    # "with the resource-id 'xyz'" or "with the accessibility-id 'abc'"
+    /with the (resource-id|accessibility[- ]?id|content-?desc|label|name)\s*[:=]?\s*['"](.+?)['"]/i,
+
+    # "Unable to find element by: id 'xyz'"
+    /Unable to find element by:\s*([a-zA-Z0-9_\- ]+)\s*[:=]?\s*['"]?(.+?)['"]?(?:\s|$)/i,
+
+    # Fallback to any "selector: '...'" occurence
+    /selector['"]?\s*[:=]?\s*['"](.+?)['"]/i
+  ]
+
+  patterns.each do |pattern|
+      if (m = message.match(pattern))
+        caps = m.captures.compact
+        if caps.length >= 2
+          raw_type  = caps[0].to_s.strip
+          raw_value = caps[1].to_s.strip
+          info[:selector_type]  = normalize_type.call(raw_type)
+          info[:selector_value] = raw_value.gsub(/\A['"]|['"]\z/, '')
+        else
+          info[:selector_type]  = 'unknown'
+          info[:selector_value] = caps[0].to_s.strip.gsub(/\A['"]|['"]\z/, '')
+        end
+        info[:raw_message] = message[0, 1000]
+        return info
+      end
+    end
+
+    # tentativa extra: By.<tipo>:<valor> em qualquer lugar da mensagem
+    if (m = message.match(/By\.([a-zA-Z0-9_\- ]+):\s*['"]?(.+?)['"]?/i))
+      info[:selector_type]  = normalize_type.call(m[1])
+      info[:selector_value] = m[2].to_s.strip
+      info[:raw_message] = message[0,1000]
+      return info
+    end
+
+    # fallback final: retorna a mensagem inteira recortada (útil para debug)
+    info[:selector_type]  = 'unknown'
+    info[:selector_value] = message.strip[0, 500]
+    info[:raw_message]    = message[0,1000]
+    info
+  end
+
 
     def self.find_similar_elements(doc, failed_info, platform)
       similar_elements = []
@@ -161,8 +206,8 @@ module AppiumFailureHelper
         next if node.name == 'hierarchy'
         attrs = node.attributes.transform_values(&:value)
         
-        # Lógica aprimorada para comparação insensível a maiúsculas/minúsculas
-        selector_value = failed_info[:selector_value].to_s.downcase
+        selector_value = failed_info[:selector_value].to_s.downcase.strip
+        
         is_similar = case platform
         when 'android'
           (attrs['resource-id']&.downcase&.include?(selector_value) ||
