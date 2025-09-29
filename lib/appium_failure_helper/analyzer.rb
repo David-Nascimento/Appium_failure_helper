@@ -4,6 +4,7 @@ module AppiumFailureHelper
       message = exception.message
       info = {}
       patterns = [
+        /element \("([^"]+)", "([^"]+)"\) could not be found/,
         /element with locator ['"]?(#?\w+)['"]?/i,
         /(?:could not be found|cannot find element) using (.+?)=['"]?([^'"]+)['"]?/i,
         /no such element: Unable to locate element: {"method":"([^"]+)","selector":"([^"]+)"}/i,
@@ -21,14 +22,46 @@ module AppiumFailureHelper
     end
 
     def self.find_de_para_match(failed_info, element_map)
-      logical_name_key = failed_info[:selector_value].to_s.gsub(/^#/, '')
+      failed_value = failed_info[:selector_value].to_s
+      return nil if failed_value.empty?
+
+      logical_name_key = failed_value.gsub(/^#/, '')
+
+      # Tentativa 1: Busca direta por nome lógico
       if element_map.key?(logical_name_key)
         return {
           logical_name: logical_name_key,
-          correct_locator: element_map[logical_name_key]
+          correct_locator: element_map[logical_name_key],
+          analysis_type: "Busca Direta"
         }
       end
-      nil
+
+      # Tentativa 2: Busca reversa por similaridade de localizador
+      # Limpa o localizador que falhou para comparação
+      cleaned_failed_locator = failed_value.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
+      
+      element_map.each do |name, locator_info|
+        mapped_locator = locator_info['valor'].to_s
+        cleaned_mapped_locator = mapped_locator.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
+
+        distance = DidYouMean::Levenshtein.distance(cleaned_failed_locator, cleaned_mapped_locator)
+        max_len = [cleaned_failed_locator.length, cleaned_mapped_locator.length].max
+        next if max_len.zero?
+
+        similarity_score = 1.0 - (distance.to_f / max_len)
+
+        # Usamos um limiar alto (90%) para ter certeza da correspondência
+        if similarity_score > 0.90
+          return {
+            logical_name: name,
+            correct_locator: locator_info,
+            analysis_type: "Busca Reversa por Similaridade",
+            score: similarity_score
+          }
+        end
+      end
+
+      nil # Retorna nulo se nenhuma das tentativas funcionar
     end
 
     def self.find_similar_elements(failed_info, all_page_suggestions)

@@ -1,3 +1,4 @@
+# lib/appium_failure_helper/handler.rb
 module AppiumFailureHelper
   class Handler
     def self.call(driver, exception)
@@ -12,14 +13,31 @@ module AppiumFailureHelper
     end
 
     def call
+      unless @driver && @driver.session_id
+        Utils.logger.error("O Appium Failure Helper não pôde ser executado pois o driver é nulo ou a sessão já foi encerrada.")
+        Utils.logger.error("Exceção original que causou a falha do cenário: #{@exception.message}")
+        return
+      end
+
       FileUtils.mkdir_p(@output_folder)
       page_source = @driver.page_source
       platform = @driver.capabilities['platformName']&.downcase || 'unknown'
 
+      # --- LÓGICA ATUALIZADA ---
+      # 1. Tenta a análise da mensagem de erro (Plano A)
       failed_info = Analyzer.extract_failure_details(@exception)
+
+      # 2. Se o Plano A falhar, aciona a análise de código-fonte (Plano B)
+      if failed_info.empty?
+        Utils.logger.info("Não foi possível extrair detalhes da mensagem de erro. Tentando analisar o código-fonte...")
+        failed_info = SourceCodeAnalyzer.extract_from_exception(@exception)
+      end
+      # --------------------------
+
+      # O resto do fluxo continua, agora com a informação do elemento que falhou
       unified_element_map = ElementRepository.load_all
       de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
-
+      
       page_analyzer = PageAnalyzer.new(page_source, platform)
       all_page_elements = page_analyzer.analyze
       similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements)
@@ -35,8 +53,8 @@ module AppiumFailureHelper
       }
 
       ReportGenerator.new(@output_folder, page_source, report_data).generate_all
-
       Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
+      
     rescue => e
       Utils.logger.error("Erro ao capturar detalhes da falha: #{e.message}\n#{e.backtrace.join("\n")}")
     end

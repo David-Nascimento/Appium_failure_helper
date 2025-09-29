@@ -11,12 +11,12 @@ require 'cgi'
 # Carrega todos os nossos novos módulos
 require_relative 'appium_failure_helper/utils'
 require_relative 'appium_failure_helper/analyzer'
+require_relative 'appium_failure_helper/source_code_analyzer'
 require_relative 'appium_failure_helper/element_repository'
 require_relative 'appium_failure_helper/page_analyzer'
 require_relative 'appium_failure_helper/report_generator'
 require_relative 'appium_failure_helper/handler'
 require_relative 'appium_failure_helper/configuration'
-
 module AppiumFailureHelper
   class Error < StandardError; end
   class << self
