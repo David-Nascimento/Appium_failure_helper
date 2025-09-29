@@ -11,13 +11,11 @@ module AppiumFailureHelper
 
     def self.load_from_ruby_file
       map = {}
-      # ALTERADO: Lê os caminhos a partir da configuração central.
       config = AppiumFailureHelper.configuration
       file_path = File.join(Dir.pwd, config.elements_path, config.elements_ruby_file)
       
       return map unless File.exist?(file_path)
 
-      # ... (o resto do método continua igual)
       begin
         require file_path
         instance = OnboardingElementLists.new
@@ -37,12 +35,10 @@ module AppiumFailureHelper
     
     def self.load_all_from_yaml
       elements_map = {}
-      # ALTERADO: Lê o caminho base da configuração central.
       config = AppiumFailureHelper.configuration
       glob_path = File.join(Dir.pwd, config.elements_path, '**', '*.yaml')
       
       Dir.glob(glob_path).each do |file|
-        # ... (o resto do método continua igual) ...
         next if file.include?('reports_failure')
         begin
           data = YAML.load_file(file)

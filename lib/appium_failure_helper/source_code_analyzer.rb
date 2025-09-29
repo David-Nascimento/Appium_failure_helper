@@ -1,7 +1,6 @@
 # lib/appium_failure_helper/source_code_analyzer.rb
 module AppiumFailureHelper
   module SourceCodeAnalyzer
-    # Regex para encontrar padrões como: find_element(:id, 'valor') ou find_element(id: 'valor')
     PATTERNS = [
       { type: 'id',               regex: /find_element\((?:id:|:id\s*=>)\s*['"]([^'"]+)['"]\)/ },
       { type: 'xpath',            regex: /find_element\((?:xpath:|:xpath\s*=>)\s*['"]([^'"]+)['"]\)/ },
@@ -22,7 +21,6 @@ module AppiumFailureHelper
 
       file_path = path_match[1]
       line_number = path_match[2]
-      # ---------------------------------
       
       return {} unless File.exist?(file_path)
 

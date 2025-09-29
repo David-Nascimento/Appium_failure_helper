@@ -1,4 +1,3 @@
-# lib/appium_failure_helper/handler.rb
 module AppiumFailureHelper
   class Handler
     def self.call(driver, exception)
@@ -23,29 +22,29 @@ module AppiumFailureHelper
       page_source = @driver.page_source
       platform = @driver.capabilities['platformName']&.downcase || 'unknown'
 
-      # --- LÓGICA ATUALIZADA ---
-      # 1. Tenta a análise da mensagem de erro (Plano A)
       failed_info = Analyzer.extract_failure_details(@exception)
-
-      # 2. Se o Plano A falhar, aciona a análise de código-fonte (Plano B)
+      failed_info ||= {}
+      
       if failed_info.empty?
-        Utils.logger.info("Não foi possível extrair detalhes da mensagem de erro. Tentando analisar o código-fonte...")
+        Utils.logger.info("Análise da mensagem de erro falhou. Tentando analisar código-fonte...")
         failed_info = SourceCodeAnalyzer.extract_from_exception(@exception)
       end
-      # --------------------------
 
-      # O resto do fluxo continua, agora com a informação do elemento que falhou
       unified_element_map = ElementRepository.load_all
       de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
       
       page_analyzer = PageAnalyzer.new(page_source, platform)
-      all_page_elements = page_analyzer.analyze
-      similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements)
+      all_page_elements = page_analyzer.analyze || []
+
+      similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements) || []
+
+      code_search_results = CodeSearcher.find_similar_locators(failed_info) || []
 
       report_data = {
         failed_element: failed_info,
         similar_elements: similar_elements,
         de_para_analysis: de_para_result,
+        code_search_results: code_search_results,
         all_page_elements: all_page_elements,
         screenshot_base64: @driver.screenshot_as(:base64),
         platform: platform,
