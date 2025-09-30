@@ -39,11 +39,11 @@ module AppiumFailureHelper
 
     def generate_html_report
       if @data[:triage_result] == :locator_issue && @data[:failed_element].empty?
-        return build_simple_diagnosis_report(
+        html_content = build_simple_diagnosis_report(
           title: "Falha na Análise do Seletor",
           message: "A GEM identificou um erro de 'elemento não encontrado', mas não conseguiu extrair o seletor da mensagem de erro ou do código-fonte. Isso pode ocorrer com métodos de busca customizados ou seletores dinâmicos. Verifique o stack trace para encontrar a linha exata do erro e o método responsável."
         )
-      end
+      else
     html_content = case @data[:triage_result]
                     when :locator_issue
                       build_full_report
@@ -79,9 +79,9 @@ module AppiumFailureHelper
                       )
                     else # :ruby_code_issue, :unknown_issue
                       build_simple_diagnosis_report(
-                        title: "Erro no Código de Teste",
-                        message: "A falha foi causada por um erro de sintaxe ou lógica no próprio código de automação (ex: método não definido, variável nula). O problema não é no Appium ou no seletor, mas sim no script. Verifique o stack trace para encontrar o arquivo e a linha exatos."
-                      )
+                           title: "Erro Inesperado",
+                           message: "Ocorreu um erro não catalogado. Verifique o stack trace para mais detalhes."
+                         )
                     end
       
       File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)

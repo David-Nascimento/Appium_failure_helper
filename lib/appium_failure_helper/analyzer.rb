@@ -1,33 +1,25 @@
 module AppiumFailureHelper
   module Analyzer
-    def self.triage_error(exception)
-      rspec_error_class = defined?(RSpec::Expectations::ExpectationNotMetError) ? RSpec::Expectations::ExpectationNotMetError : Class.new
-
-      result = case exception
-               when Selenium::WebDriver::Error::NoSuchElementError, 
-                    Selenium::WebDriver::Error::TimeoutError,
-                    Selenium::WebDriver::Error::UnknownCommandError
-                  :locator_issue
-               when Selenium::WebDriver::Error::ElementNotInteractableError
-                 :visibility_issue
-               when Selenium::WebDriver::Error::StaleElementReferenceError
-                 :stale_element_issue
-               when rspec_error_class
-                 :assertion_failure
-               when NoMethodError, NameError, ArgumentError, TypeError
-                 :ruby_code_issue
-               when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
-                 :session_startup_issue
-               when Selenium::WebDriver::Error::WebDriverError
-                 if exception.message.include?('session deleted because of page crash')
-                   :app_crash_issue
-                 else
-                   :unknown_appium_issue
-                 end
-               else
-                 :unknown_issue
-               end
-      return result
+        def self.triage_error(exception)
+      case exception
+      when Selenium::WebDriver::Error::NoSuchElementError, Selenium::WebDriver::Error::TimeoutError
+        :locator_issue
+      when Selenium::WebDriver::Error::ElementNotInteractableError
+        :visibility_issue
+      when Selenium::WebDriver::Error::StaleElementReferenceError
+        :stale_element_issue
+      when defined?(RSpec::Expectations::ExpectationNotMetError) ? RSpec::Expectations::ExpectationNotMetError : Class.new
+        :assertion_failure
+      when NoMethodError, NameError, ArgumentError, TypeError
+        :ruby_code_issue
+      when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
+        :session_startup_issue
+      when Selenium::WebDriver::Error::WebDriverError
+        return :app_crash_issue if exception.message.include?('session deleted because of page crash')
+        :unknown_appium_issue
+      else
+        :unknown_issue
+      end
     end
 
     def self.extract_failure_details(exception)
