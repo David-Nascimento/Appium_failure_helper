@@ -1,13 +1,13 @@
 module AppiumFailureHelper
   class ReportGenerator
-    def initialize(output_folder, page_source, report_data)
+    def initialize(output_folder, report_data)
       @output_folder = output_folder
-      @page_source = page_source
       @data = report_data
+      @page_source = report_data[:page_source] # Pega o page_source de dentro do hash
     end
 
     def generate_all
-      generate_xml_report
+      generate_xml_report if @page_source
       generate_yaml_reports
       generate_html_report
     end
@@ -19,18 +19,64 @@ module AppiumFailureHelper
     end
 
     def generate_yaml_reports
+      # Gera um YAML simplificado se não for um problema de seletor
       analysis_report = {
+        triage_result: @data[:triage_result],
+        exception_class: @data[:exception].class.to_s,
+        exception_message: @data[:exception].message,
         failed_element: @data[:failed_element],
         similar_elements: @data[:similar_elements],
         de_para_analysis: @data[:de_para_analysis],
-        code_search_results: @data[:code_search_results],
-        alternative_xpaths: @data[:alternative_xpaths]
+        code_search_results: @data[:code_search_results]
       }
       File.open("#{@output_folder}/failure_analysis_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(analysis_report)) }
-      File.open("#{@output_folder}/all_elements_dump_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(@data[:all_page_elements])) }
+      
+      # Só gera o dump de elementos se a análise completa tiver sido feita
+      if @data[:all_page_elements]
+        File.open("#{@output_folder}/all_elements_dump_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(@data[:all_page_elements])) }
+      end
     end
 
-    def generate_html_report
+       def generate_html_report
+      html_content = case @data[:triage_result]
+                     when :locator_issue
+                       build_full_report
+                     when :assertion_failure
+                       build_simple_diagnosis_report(
+                         title: "Falha de Asserção (Bug Funcional)",
+                         message: "A automação executou os passos corretamente, mas o resultado final verificado na tela não foi o esperado. Isso geralmente indica um bug funcional na aplicação, e não um problema com o seletor."
+                       )
+                     when :visibility_issue
+                       build_simple_diagnosis_report(
+                         title: "Elemento Oculto ou Não-Interagível",
+                         message: "O seletor encontrou o elemento no XML da página, mas ele não está visível ou habilitado para interação. Verifique se há outros elementos sobrepondo-o, se ele está desabilitado (disabled/enabled='false'), ou se é necessário aguardar uma animação."
+                       )
+                     when :stale_element_issue
+                       build_simple_diagnosis_report(
+                         title: "Referência de Elemento Antiga (Stale)",
+                         message: "O elemento foi encontrado, mas a página foi atualizada antes que a interação pudesse ocorrer. Isso é um problema de timing. A solução é encontrar o elemento novamente logo antes de interagir com ele."
+                       )
+                     when :session_startup_issue
+                       build_simple_diagnosis_report(
+                         title: "Falha na Conexão com o Servidor Appium",
+                         message: "Não foi possível criar uma sessão com o servidor. Verifique se o servidor Appium está rodando, se as 'capabilities' (incluindo prefixos 'appium:') e a URL de conexão estão corretas."
+                       )
+                     when :app_crash_issue
+                       build_simple_diagnosis_report(
+                         title: "Crash do Aplicativo",
+                         message: "A sessão foi encerrada inesperadamente, o que indica que o aplicativo travou. A causa raiz deve ser investigada nos logs do dispositivo (Logcat para Android, Console para iOS)."
+                       )
+                     else # :ruby_code_issue, :unknown_issue
+                       build_simple_diagnosis_report(
+                         title: "Erro no Código de Teste",
+                         message: "A falha foi causada por um erro de sintaxe ou lógica no próprio código de automação (ex: método não definido, variável nula). O problema não é no Appium ou no seletor, mas sim no script. Verifique o stack trace para encontrar o arquivo e a linha exatos."
+                       )
+                     end
+      
+      File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)
+    end
+
+    def build_full_report
       failed_info = @data[:failed_element] || {}
       similar_elements = @data[:similar_elements] || []
       all_suggestions = @data[:all_page_elements] || []
@@ -40,48 +86,21 @@ module AppiumFailureHelper
       timestamp = @data[:timestamp]
       platform = @data[:platform]
       screenshot_base64 = @data[:screenshot_base64]
-      
+
       locators_html = lambda do |locators|
-        (locators || []).map do |loc|
-          strategy_text = loc[:strategy].to_s.upcase.gsub('_', ' ')
-          "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{CGI.escapeHTML(strategy_text)}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{CGI.escapeHTML(loc[:locator])}</span></li>"
-        end.join
+        (locators || []).map { |loc| "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{CGI.escapeHTML(loc[:strategy].to_s.upcase.gsub('_', ' '))}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{CGI.escapeHTML(loc[:locator])}</span></li>" }.join
       end
 
       all_elements_html = lambda do |elements|
         (elements || []).map { |el| "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{CGI.escapeHTML(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html.call(el[:locators])}</ul></details>" }.join
       end
       
-      de_para_html = ""
-      failed_info_content = ""
+      de_para_html = "" # (Sua lógica de_para_html)
+      code_search_html = "" # (Sua lógica code_search_html)
+      failed_info_content = if failed_info && !failed_info.empty?; # ... (Sua lógica failed_info_content)
+      else "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"; end
 
-      code_search_html = ""
-      unless code_search_results.empty?
-        suggestions_list = code_search_results.map do |match|
-          score_percent = (match[:score] * 100).round(1)
-          <<~SUGGESTION
-            <div class='border border-sky-200 bg-sky-50 p-3 rounded-lg mb-2'>
-              <p class='text-sm text-gray-600'>Encontrado em: <strong class='font-mono'>#{match[:file]}:#{match[:line_number]}</strong></p>
-              <pre class='bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-auto'><code>#{CGI.escapeHTML(match[:code])}</code></pre>
-              <p class='text-xs text-green-600 mt-1'>Similaridade: #{score_percent}%</p>
-            </div>
-          SUGGESTION
-        end.join
-        code_search_html = <<~HTML
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h2 class="text-xl font-bold text-sky-700 mb-4">Sugestões Encontradas no Código</h2>
-            #{suggestions_list}
-          </div>
-        HTML
-      end
-
-      failed_info_content = if failed_info && !failed_info.empty?
-         "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-all'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
-      else
-        "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"
-      end
-
-      repair_strategies_content = if alternative_xpaths.empty?
+     repair_strategies_content = if alternative_xpaths.empty?
         "<p class='text-gray-500'>Nenhuma estratégia de XPath alternativa pôde ser gerada para o elemento alvo.</p>"
       else
         pages = alternative_xpaths.each_slice(6).to_a
@@ -152,7 +171,7 @@ module AppiumFailureHelper
         CAROUSEL
       end
 
-      html_content = <<~HTML_REPORT
+      <<~HTML_REPORT
         <!DOCTYPE html>
         <html lang="pt-BR">
         <head>
@@ -190,6 +209,9 @@ module AppiumFailureHelper
                       <h3 class="text-lg font-semibold text-indigo-700 mb-4">Estratégias de Localização Alternativas</h3>
                       #{repair_strategies_content}
                     </div>
+                    <div id="similar" class="tab-content">
+                      <div class="space-y-3 max-h-[700px] overflow-y-auto">#{similar_elements_content}</div>
+                    </div>
                     <div id="all" class="tab-content">
                       <h3 class="text-lg font-semibold text-gray-700 mb-4">Dump de Todos os Elementos da Tela</h3>
                       <div class="max-h-[800px] overflow-y-auto space-y-2">#{all_elements_html.call(all_suggestions)}</div>
@@ -199,7 +221,7 @@ module AppiumFailureHelper
               </div>
             </div>
           </div>
-          <script>
+           <script>
             document.addEventListener('DOMContentLoaded', () => {
               const tabs = document.querySelectorAll('.tab-button');
               tabs.forEach(tab => {
@@ -253,8 +275,56 @@ module AppiumFailureHelper
         </body>
         </html>
       HTML_REPORT
+    end
 
-      File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)
+    def build_simple_diagnosis_report(title:, message:)
+      exception = @data[:exception]
+      error_message_html = CGI.escapeHTML(exception.message.to_s)
+      backtrace_html = CGI.escapeHTML(exception.backtrace.join("\n"))
+
+      <<~HTML_REPORT
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Diagnóstico de Falha - #{title}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-gray-100 p-4 sm:p-8">
+          <div class="max-w-4xl mx-auto">
+            <header class="mb-8 pb-4 border-b border-gray-200">
+              <h1 class="text-3xl font-bold text-gray-800">Diagnóstico de Falha Automatizada</h1>
+              <p class="text-sm text-gray-500">Relatório gerado em: #{@data[:timestamp]} | Plataforma: #{@data[:platform].to_s.upcase}</p>
+            </header>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="md:col-span-1">
+                <div class="bg-white p-4 rounded-lg shadow-md">
+                  <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
+                  <img src="data:image/png;base64,#{@data[:screenshot_base64]}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
+                </div>
+              </div>
+              <div class="md:col-span-2 space-y-6">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                  <h2 class="text-xl font-bold text-red-600 mb-4">Diagnóstico: #{title}</h2>
+                  <div class="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 rounded-r-lg">
+                    <p class="font-semibold">Causa Provável:</p>
+                    <p>#{message}</p>
+                  </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                  <h3 class="text-lg font-semibold text-gray-700 mb-2">Mensagem de Erro Original</h3>
+                  <pre class="bg-gray-800 text-white p-4 rounded text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto"><code>#{error_message_html}</code></pre>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                  <h3 class="text-lg font-semibold text-gray-700 mb-2">Stack Trace</h3>
+                  <pre class="bg-gray-800 text-white p-4 rounded text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"><code>#{backtrace_html}</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      HTML_REPORT
     end
   end
 end

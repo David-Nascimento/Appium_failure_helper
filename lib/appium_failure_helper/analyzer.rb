@@ -1,6 +1,29 @@
 # lib/appium_failure_helper/analyzer.rb
 module AppiumFailureHelper
   module Analyzer
+    
+    def self.triage_error(exception)
+      case exception
+      when Selenium::WebDriver::Error::NoSuchElementError, Selenium::WebDriver::Error::TimeoutError
+        :locator_issue # O elemento não foi encontrado a tempo.
+      when Selenium::WebDriver::Error::ElementNotInteractableError
+        :visibility_issue # Encontrado, mas não clicável/visível.
+      when Selenium::WebDriver::Error::StaleElementReferenceError
+        :stale_element_issue # A página mudou, o elemento "envelheceu".
+      when RSpec::Expectations::ExpectationNotMetError
+        :assertion_failure # É um bug funcional, a asserção falhou.
+      when NoMethodError, NameError, ArgumentError, TypeError
+        :ruby_code_issue # Erro de sintaxe ou lógica no código de teste.
+      when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
+        :session_startup_issue # Problema na conexão/inicialização com o Appium.
+      when Selenium::WebDriver::Error::WebDriverError
+        return :app_crash_issue if exception.message.include?('session deleted because of page crash')
+        :unknown_appium_issue
+      else
+        :unknown_issue
+      end
+    end
+
     def self.extract_failure_details(exception)
       message = exception.message
       info = {}
