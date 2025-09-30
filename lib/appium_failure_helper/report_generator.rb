@@ -44,45 +44,46 @@ module AppiumFailureHelper
           message: "A GEM identificou um erro de 'elemento não encontrado', mas não conseguiu extrair o seletor da mensagem de erro ou do código-fonte. Isso pode ocorrer com métodos de busca customizados ou seletores dinâmicos. Verifique o stack trace para encontrar a linha exata do erro e o método responsável."
         )
       else
-    html_content = case @data[:triage_result]
-                    when :locator_issue
-                      build_full_report
-                    when :unidentified_locator_issue, :unidentified_timeout_issue
-                      build_simple_diagnosis_report(
-                        title: "Seletor Não Identificado",
-                        message: "A falha ocorreu porque um elemento não foi encontrado, mas a GEM não conseguiu extrair o seletor exato da mensagem de erro ou do código-fonte. Isso geralmente acontece quando o seletor é construído dinamicamente ou está dentro de um método helper complexo. Verifique o stack trace para encontrar o método responsável (ex: 'tap_by_text')."
-                      )
-                    when :assertion_failure
-                      build_simple_diagnosis_report(
-                        title: "Falha de Asserção (Bug Funcional)",
-                        message: "A automação executou os passos corretamente, mas o resultado final verificado na tela não foi o esperado. Isso geralmente indica um bug funcional na aplicação, e não um problema com o seletor."
-                      )
-                    when :visibility_issue
-                      build_simple_diagnosis_report(
-                        title: "Elemento Oculto ou Não-Interagível",
-                        message: "O seletor encontrou o elemento no XML da página, mas ele não está visível ou habilitado para interação. Verifique se há outros elementos sobrepondo-o, se ele está desabilitado (disabled/enabled='false'), ou se é necessário aguardar uma animação."
-                      )
-                    when :stale_element_issue
-                      build_simple_diagnosis_report(
-                        title: "Referência de Elemento Antiga (Stale)",
-                        message: "O elemento foi encontrado, mas a página foi atualizada antes que a interação pudesse ocorrer. Isso é um problema de timing. A solução é encontrar o elemento novamente logo antes de interagir com ele."
-                      )
-                    when :session_startup_issue
-                      build_simple_diagnosis_report(
-                        title: "Falha na Conexão com o Servidor Appium",
-                        message: "Não foi possível criar uma sessão com o servidor. Verifique se o servidor Appium está rodando, se as 'capabilities' (incluindo prefixos 'appium:') e a URL de conexão estão corretas."
-                      )
-                    when :app_crash_issue
-                      build_simple_diagnosis_report(
-                        title: "Crash do Aplicativo",
-                        message: "A sessão foi encerrada inesperadamente, o que indica que o aplicativo travou. A causa raiz deve ser investigada nos logs do dispositivo (Logcat para Android, Console para iOS)."
-                      )
-                    else # :ruby_code_issue, :unknown_issue
-                      build_simple_diagnosis_report(
-                           title: "Erro Inesperado",
-                           message: "Ocorreu um erro não catalogado. Verifique o stack trace para mais detalhes."
-                         )
-                    end
+        html_content = case @data[:triage_result]
+                        when :locator_issue
+                          build_full_report
+                        when :unidentified_locator_issue, :unidentified_timeout_issue
+                          build_simple_diagnosis_report(
+                            title: "Seletor Não Identificado",
+                            message: "A falha ocorreu porque um elemento não foi encontrado, mas a GEM não conseguiu extrair o seletor exato da mensagem de erro ou do código-fonte. Isso geralmente acontece quando o seletor é construído dinamicamente ou está dentro de um método helper complexo. Verifique o stack trace para encontrar o método responsável (ex: 'tap_by_text')."
+                          )
+                        when :assertion_failure
+                          build_simple_diagnosis_report(
+                            title: "Falha de Asserção (Bug Funcional)",
+                            message: "A automação executou os passos corretamente, mas o resultado final verificado na tela não foi o esperado. Isso geralmente indica um bug funcional na aplicação, e não um problema com o seletor."
+                          )
+                        when :visibility_issue
+                          build_simple_diagnosis_report(
+                            title: "Elemento Oculto ou Não-Interagível",
+                            message: "O seletor encontrou o elemento no XML da página, mas ele não está visível ou habilitado para interação. Verifique se há outros elementos sobrepondo-o, se ele está desabilitado (disabled/enabled='false'), ou se é necessário aguardar uma animação."
+                          )
+                        when :stale_element_issue
+                          build_simple_diagnosis_report(
+                            title: "Referência de Elemento Antiga (Stale)",
+                            message: "O elemento foi encontrado, mas a página foi atualizada antes que a interação pudesse ocorrer. Isso é um problema de timing. A solução é encontrar o elemento novamente logo antes de interagir com ele."
+                          )
+                        when :session_startup_issue
+                          build_simple_diagnosis_report(
+                            title: "Falha na Conexão com o Servidor Appium",
+                            message: "Não foi possível criar uma sessão com o servidor. Verifique se o servidor Appium está rodando, se as 'capabilities' (incluindo prefixos 'appium:') e a URL de conexão estão corretas."
+                          )
+                        when :app_crash_issue
+                          build_simple_diagnosis_report(
+                            title: "Crash do Aplicativo",
+                            message: "A sessão foi encerrada inesperadamente, o que indica que o aplicativo travou. A causa raiz deve ser investigada nos logs do dispositivo (Logcat para Android, Console para iOS)."
+                          )
+                        else # :ruby_code_issue, :unknown_issue
+                          build_simple_diagnosis_report(
+                              title: "Erro Inesperado",
+                              message: "Ocorreu um erro não catalogado. Verifique o stack trace para mais detalhes."
+                            )
+                        end
+      end
       
       File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)
     end
