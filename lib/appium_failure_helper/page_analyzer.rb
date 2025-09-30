@@ -1,4 +1,3 @@
-# lib/appium_failure_helper/page_analyzer.rb
 module AppiumFailureHelper
   class PageAnalyzer
     PREFIX = {
@@ -21,19 +20,26 @@ module AppiumFailureHelper
       @platform = platform
     end
 
-    def analyze
+     def analyze
       seen_elements = {}
       all_elements_suggestions = []
       @doc.xpath('//*').each do |node|
           next if ['hierarchy', 'AppiumAUT'].include?(node.name)
           attrs = node.attributes.transform_values(&:value)
-          unique_key = "#{node.name}|#{attrs['resource-id']}|#{attrs['content-desc']}|#{attrs['text']}"
-          unless seen_elements[unique_key]
-              name = suggest_name(node.name, attrs)
-              locators = xpath_generator(node.name, attrs)
-              all_elements_suggestions << { name: name, locators: locators }
-              seen_elements[unique_key] = true
-          end
+          
+          unique_key = node.path
+          next if seen_elements[unique_key]
+
+          name = suggest_name(node.name, attrs)
+          
+          locators = XPathFactory.generate_for_node(node)
+          
+         all_elements_suggestions << { 
+            name: name, 
+            locators: locators, 
+            attributes: attrs.merge(tag: node.name, path: node.path) 
+          }
+          seen_elements[unique_key] = true
       end
       all_elements_suggestions
     end

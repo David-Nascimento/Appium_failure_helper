@@ -1,4 +1,3 @@
-# lib/appium_failure_helper/source_code_analyzer.rb
 module AppiumFailureHelper
   module SourceCodeAnalyzer
     PATTERNS = [
