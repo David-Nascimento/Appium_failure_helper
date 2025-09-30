@@ -24,7 +24,13 @@ module AppiumFailureHelper
           return map
         end
         instance.elements.each do |key, value|
-          map[key.to_s] = { 'tipoBusca' => value[0], 'valor' => value[1] }
+          valor = value[1]
+          if valor.is_a?(Hash)
+            valor_final = valor['valor'] || valor['value'] || valor
+          else
+            valor_final = valor
+          end
+          map[key.to_s] = { 'tipoBusca' => value[0], 'valor' => valor_final }
         end
       rescue => e
         Utils.logger.warn("AVISO: Erro ao processar o arquivo #{file_path}: #{e.message}")

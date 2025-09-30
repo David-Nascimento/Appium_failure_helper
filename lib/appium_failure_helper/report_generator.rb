@@ -37,41 +37,52 @@ module AppiumFailureHelper
       end
     end
 
-       def generate_html_report
-      html_content = case @data[:triage_result]
-                     when :locator_issue
-                       build_full_report
-                     when :assertion_failure
-                       build_simple_diagnosis_report(
-                         title: "Falha de Asserção (Bug Funcional)",
-                         message: "A automação executou os passos corretamente, mas o resultado final verificado na tela não foi o esperado. Isso geralmente indica um bug funcional na aplicação, e não um problema com o seletor."
-                       )
-                     when :visibility_issue
-                       build_simple_diagnosis_report(
-                         title: "Elemento Oculto ou Não-Interagível",
-                         message: "O seletor encontrou o elemento no XML da página, mas ele não está visível ou habilitado para interação. Verifique se há outros elementos sobrepondo-o, se ele está desabilitado (disabled/enabled='false'), ou se é necessário aguardar uma animação."
-                       )
-                     when :stale_element_issue
-                       build_simple_diagnosis_report(
-                         title: "Referência de Elemento Antiga (Stale)",
-                         message: "O elemento foi encontrado, mas a página foi atualizada antes que a interação pudesse ocorrer. Isso é um problema de timing. A solução é encontrar o elemento novamente logo antes de interagir com ele."
-                       )
-                     when :session_startup_issue
-                       build_simple_diagnosis_report(
-                         title: "Falha na Conexão com o Servidor Appium",
-                         message: "Não foi possível criar uma sessão com o servidor. Verifique se o servidor Appium está rodando, se as 'capabilities' (incluindo prefixos 'appium:') e a URL de conexão estão corretas."
-                       )
-                     when :app_crash_issue
-                       build_simple_diagnosis_report(
-                         title: "Crash do Aplicativo",
-                         message: "A sessão foi encerrada inesperadamente, o que indica que o aplicativo travou. A causa raiz deve ser investigada nos logs do dispositivo (Logcat para Android, Console para iOS)."
-                       )
-                     else # :ruby_code_issue, :unknown_issue
-                       build_simple_diagnosis_report(
-                         title: "Erro no Código de Teste",
-                         message: "A falha foi causada por um erro de sintaxe ou lógica no próprio código de automação (ex: método não definido, variável nula). O problema não é no Appium ou no seletor, mas sim no script. Verifique o stack trace para encontrar o arquivo e a linha exatos."
-                       )
-                     end
+    def generate_html_report
+      if @data[:triage_result] == :locator_issue && @data[:failed_element].empty?
+        return build_simple_diagnosis_report(
+          title: "Falha na Análise do Seletor",
+          message: "A GEM identificou um erro de 'elemento não encontrado', mas não conseguiu extrair o seletor da mensagem de erro ou do código-fonte. Isso pode ocorrer com métodos de busca customizados ou seletores dinâmicos. Verifique o stack trace para encontrar a linha exata do erro e o método responsável."
+        )
+      end
+    html_content = case @data[:triage_result]
+                    when :locator_issue
+                      build_full_report
+                    when :unidentified_locator_issue, :unidentified_timeout_issue
+                      build_simple_diagnosis_report(
+                        title: "Seletor Não Identificado",
+                        message: "A falha ocorreu porque um elemento não foi encontrado, mas a GEM não conseguiu extrair o seletor exato da mensagem de erro ou do código-fonte. Isso geralmente acontece quando o seletor é construído dinamicamente ou está dentro de um método helper complexo. Verifique o stack trace para encontrar o método responsável (ex: 'tap_by_text')."
+                      )
+                    when :assertion_failure
+                      build_simple_diagnosis_report(
+                        title: "Falha de Asserção (Bug Funcional)",
+                        message: "A automação executou os passos corretamente, mas o resultado final verificado na tela não foi o esperado. Isso geralmente indica um bug funcional na aplicação, e não um problema com o seletor."
+                      )
+                    when :visibility_issue
+                      build_simple_diagnosis_report(
+                        title: "Elemento Oculto ou Não-Interagível",
+                        message: "O seletor encontrou o elemento no XML da página, mas ele não está visível ou habilitado para interação. Verifique se há outros elementos sobrepondo-o, se ele está desabilitado (disabled/enabled='false'), ou se é necessário aguardar uma animação."
+                      )
+                    when :stale_element_issue
+                      build_simple_diagnosis_report(
+                        title: "Referência de Elemento Antiga (Stale)",
+                        message: "O elemento foi encontrado, mas a página foi atualizada antes que a interação pudesse ocorrer. Isso é um problema de timing. A solução é encontrar o elemento novamente logo antes de interagir com ele."
+                      )
+                    when :session_startup_issue
+                      build_simple_diagnosis_report(
+                        title: "Falha na Conexão com o Servidor Appium",
+                        message: "Não foi possível criar uma sessão com o servidor. Verifique se o servidor Appium está rodando, se as 'capabilities' (incluindo prefixos 'appium:') e a URL de conexão estão corretas."
+                      )
+                    when :app_crash_issue
+                      build_simple_diagnosis_report(
+                        title: "Crash do Aplicativo",
+                        message: "A sessão foi encerrada inesperadamente, o que indica que o aplicativo travou. A causa raiz deve ser investigada nos logs do dispositivo (Logcat para Android, Console para iOS)."
+                      )
+                    else # :ruby_code_issue, :unknown_issue
+                      build_simple_diagnosis_report(
+                        title: "Erro no Código de Teste",
+                        message: "A falha foi causada por um erro de sintaxe ou lógica no próprio código de automação (ex: método não definido, variável nula). O problema não é no Appium ou no seletor, mas sim no script. Verifique o stack trace para encontrar o arquivo e a linha exatos."
+                      )
+                    end
       
       File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)
     end
@@ -99,6 +110,32 @@ module AppiumFailureHelper
       code_search_html = "" # (Sua lógica code_search_html)
       failed_info_content = if failed_info && !failed_info.empty?; # ... (Sua lógica failed_info_content)
       else "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"; end
+      code_search_html = ""
+      unless code_search_results.empty?
+        suggestions_list = code_search_results.map do |match|
+          score_percent = (match[:score] * 100).round(1)
+          <<~SUGGESTION
+            <div class='border border-sky-200 bg-sky-50 p-3 rounded-lg mb-2'>
+              <p class='text-sm text-gray-600'>Encontrado em: <strong class='font-mono'>#{match[:file]}:#{match[:line_number]}</strong></p>
+              <pre class='bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-auto'><code>#{CGI.escapeHTML(match[:code])}</code></pre>
+              <p class='text-xs text-green-600 mt-1'>Similaridade: #{score_percent}%</p>
+            </div>
+          SUGGESTION
+        end.join
+        code_search_html = <<~HTML
+          <div class="bg-white p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-bold text-sky-700 mb-4">Sugestões Encontradas no Código</h2>
+            #{suggestions_list}
+          </div>
+        HTML
+      end
+
+      # --- LÓGICA RESTAURADA: ELEMENTO COM FALHA ---
+      failed_info_content = if failed_info && !failed_info.empty?
+         "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-all'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
+      else
+        "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"
+      end
 
      repair_strategies_content = if alternative_xpaths.empty?
         "<p class='text-gray-500'>Nenhuma estratégia de XPath alternativa pôde ser gerada para o elemento alvo.</p>"
@@ -208,9 +245,6 @@ module AppiumFailureHelper
                     <div id="strategies" class="tab-content active">
                       <h3 class="text-lg font-semibold text-indigo-700 mb-4">Estratégias de Localização Alternativas</h3>
                       #{repair_strategies_content}
-                    </div>
-                    <div id="similar" class="tab-content">
-                      <div class="space-y-3 max-h-[700px] overflow-y-auto">#{similar_elements_content}</div>
                     </div>
                     <div id="all" class="tab-content">
                       <h3 class="text-lg font-semibold text-gray-700 mb-4">Dump de Todos os Elementos da Tela</h3>

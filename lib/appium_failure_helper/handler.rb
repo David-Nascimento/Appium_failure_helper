@@ -16,6 +16,7 @@ module AppiumFailureHelper
       begin
         unless @driver && @driver.session_id
           Utils.logger.error("Helper não executado: driver nulo ou sessão encerrada.")
+          Utils.logger.error("Exceção original: #{@exception.message}")
           return
         end
 
@@ -40,35 +41,38 @@ module AppiumFailureHelper
             failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
           end
           
-          page_analyzer = PageAnalyzer.new(page_source, report_data[:platform].to_s)
-          all_page_elements = page_analyzer.analyze || []
-          similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements) || []
-          
-          alternative_xpaths = []
-          if !similar_elements.empty?
-            target_suggestion = similar_elements.first
-            if target_suggestion[:attributes] && (target_path = target_suggestion[:attributes][:path])
-              target_node = doc.at_xpath(target_path)
-              alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
+          if failed_info.empty?
+            report_data[:triage_result] = :unidentified_locator_issue
+          else
+            page_analyzer = PageAnalyzer.new(page_source, report_data[:platform].to_s)
+            all_page_elements = page_analyzer.analyze || []
+            similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements) || []
+            
+            alternative_xpaths = []
+            if !similar_elements.empty?
+              target_suggestion = similar_elements.first
+              if target_suggestion[:attributes] && (target_path = target_suggestion[:attributes][:path])
+                target_node = doc.at_xpath(target_path)
+                alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
+              end
             end
+
+            unified_element_map = ElementRepository.load_all
+            de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
+            code_search_results = CodeSearcher.find_similar_locators(failed_info) || []
+
+            report_data.merge!({
+              page_source: page_source,
+              failed_element: failed_info,
+              similar_elements: similar_elements,
+              alternative_xpaths: alternative_xpaths,
+              de_para_analysis: de_para_result,
+              code_search_results: code_search_results,
+              all_page_elements: all_page_elements
+            })
           end
-
-          unified_element_map = ElementRepository.load_all
-          de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
-          code_search_results = CodeSearcher.find_similar_locators(failed_info) || []
-
-          report_data.merge!({
-            page_source: page_source,
-            failed_element: failed_info,
-            similar_elements: similar_elements,
-            alternative_xpaths: alternative_xpaths,
-            de_para_analysis: de_para_result,
-            code_search_results: code_search_results,
-            all_page_elements: all_page_elements
-          })
         end
 
-        # A chamada correta, passando apenas 2 argumentos
         ReportGenerator.new(@output_folder, report_data).generate_all
         Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
         

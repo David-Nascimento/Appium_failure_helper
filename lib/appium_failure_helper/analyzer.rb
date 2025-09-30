@@ -1,27 +1,33 @@
-# lib/appium_failure_helper/analyzer.rb
 module AppiumFailureHelper
   module Analyzer
-    
     def self.triage_error(exception)
-      case exception
-      when Selenium::WebDriver::Error::NoSuchElementError, Selenium::WebDriver::Error::TimeoutError
-        :locator_issue # O elemento não foi encontrado a tempo.
-      when Selenium::WebDriver::Error::ElementNotInteractableError
-        :visibility_issue # Encontrado, mas não clicável/visível.
-      when Selenium::WebDriver::Error::StaleElementReferenceError
-        :stale_element_issue # A página mudou, o elemento "envelheceu".
-      when RSpec::Expectations::ExpectationNotMetError
-        :assertion_failure # É um bug funcional, a asserção falhou.
-      when NoMethodError, NameError, ArgumentError, TypeError
-        :ruby_code_issue # Erro de sintaxe ou lógica no código de teste.
-      when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
-        :session_startup_issue # Problema na conexão/inicialização com o Appium.
-      when Selenium::WebDriver::Error::WebDriverError
-        return :app_crash_issue if exception.message.include?('session deleted because of page crash')
-        :unknown_appium_issue
-      else
-        :unknown_issue
-      end
+      rspec_error_class = defined?(RSpec::Expectations::ExpectationNotMetError) ? RSpec::Expectations::ExpectationNotMetError : Class.new
+
+      result = case exception
+               when Selenium::WebDriver::Error::NoSuchElementError, 
+                    Selenium::WebDriver::Error::TimeoutError,
+                    Selenium::WebDriver::Error::UnknownCommandError
+                  :locator_issue
+               when Selenium::WebDriver::Error::ElementNotInteractableError
+                 :visibility_issue
+               when Selenium::WebDriver::Error::StaleElementReferenceError
+                 :stale_element_issue
+               when rspec_error_class
+                 :assertion_failure
+               when NoMethodError, NameError, ArgumentError, TypeError
+                 :ruby_code_issue
+               when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
+                 :session_startup_issue
+               when Selenium::WebDriver::Error::WebDriverError
+                 if exception.message.include?('session deleted because of page crash')
+                   :app_crash_issue
+                 else
+                   :unknown_appium_issue
+                 end
+               else
+                 :unknown_issue
+               end
+      return result
     end
 
     def self.extract_failure_details(exception)
@@ -34,36 +40,31 @@ module AppiumFailureHelper
         /(?:with the resource-id|with the accessibility-id) ['"]?(.+?)['"]?/i
       ]
       patterns.each do |pattern|
-          match = message.match(pattern)
-          if match
-              info[:selector_value] = match.captures.last.strip.gsub(/['"]/, '')
-              info[:selector_type] = match.captures.size > 1 ? match.captures[0].strip.gsub(/['"]/, '') : 'id'
-              return info
-          end
+        match = message.match(pattern)
+        if match
+          info[:selector_value] = match.captures.last.strip.gsub(/['"]/, '')
+          info[:selector_type] = match.captures.size > 1 ? match.captures[0].strip.gsub(/['"]/, '') : 'id'
+          return info
+        end
       end
       info
     end
-    
+
     def self.find_de_para_match(failed_info, element_map)
       failed_value = failed_info[:selector_value].to_s
       return nil if failed_value.empty?
-
       logical_name_key = failed_value.gsub(/^#/, '')
-
       if element_map.key?(logical_name_key)
         return { logical_name: logical_name_key, correct_locator: element_map[logical_name_key] }
       end
-
       cleaned_failed_locator = failed_value.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
-      
       element_map.each do |name, locator_info|
-        mapped_locator = locator_info['valor'].to_s
+        mapped_locator = locator_info['valor'].to_s || locator_info['value'].to_s
         cleaned_mapped_locator = mapped_locator.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
         distance = DidYouMean::Levenshtein.distance(cleaned_failed_locator, cleaned_mapped_locator)
         max_len = [cleaned_failed_locator.length, cleaned_mapped_locator.length].max
         next if max_len.zero?
         similarity_score = 1.0 - (distance.to_f / max_len)
-
         if similarity_score > 0.85
           return { logical_name: name, correct_locator: locator_info }
         end
@@ -75,20 +76,16 @@ module AppiumFailureHelper
       failed_locator_value = failed_info[:selector_value]
       failed_locator_type = failed_info[:selector_type]
       return [] unless failed_locator_value && failed_locator_type
-
       normalized_failed_type = failed_locator_type.to_s.downcase.include?('id') ? 'id' : failed_locator_type.to_s
       cleaned_failed_locator = failed_locator_value.to_s.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
       similarities = []
-
       all_page_suggestions.each do |suggestion|
         candidate_locator = suggestion[:locators].find { |loc| loc[:strategy] == normalized_failed_type }
         next unless candidate_locator
-        
         cleaned_candidate_locator = candidate_locator[:locator].gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
         distance = DidYouMean::Levenshtein.distance(cleaned_failed_locator, cleaned_candidate_locator)
         max_len = [cleaned_failed_locator.length, cleaned_candidate_locator.length].max
         next if max_len.zero?
-        
         similarity_score = 1.0 - (distance.to_f / max_len)
         if similarity_score > 0.85
           similarities << { name: suggestion[:name], locators: suggestion[:locators], score: similarity_score, attributes: suggestion[:attributes] }
