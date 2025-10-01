@@ -1,28 +1,28 @@
-# Diagnóstico Inteligente de Falhas Appium
+# Appium Failure Helper: Diagnóstico Inteligente de Falhas
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Gem Version](https://img.shields.io/badge/gem-v1.1.0-blue)
+![Gem Version](https://img.shields.io/badge/gem-v3.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-Uma ferramenta robusta para diagnosticar falhas em testes automatizados com Appium, transformando erros de `NoSuchElementException` em relatórios interativos e inteligentes. Chega de perder tempo depurando seletores quebrados; deixe que a análise automatizada faça o trabalho pesado por você.
+Uma GEM de diagnóstico para testes Appium em Ruby, projetada para transformar falhas de automação em insights acionáveis. Quando um teste falha por não encontrar um elemento, esta ferramenta gera um relatório HTML detalhado, identificando a causa provável do erro e acelerando drasticamente o tempo de depuração.
 
 ## ✨ Principais Funcionalidades
 
-* **Relatório HTML Interativo:** Gera um relatório visual completo a cada falha, com screenshot, análise detalhada e dump de todos os elementos da tela.
-* **Análise de Mapeamento ("De/Para"):** Verifica automaticamente se o elemento que falhou está definido em alguma fonte de dados do projeto, como:
-    * **Arquivos `.yaml`** gerados dinamicamente.
-    * **Arquivos de elementos Ruby (`.rb`)** customizáveis.
-* **Sugestão por Similaridade:** Utiliza o algoritmo de Levenshtein para encontrar elementos na tela que são "parecidos" com o localizador que falhou, sugerindo correções.
-* **Altamente Configurável:** Permite que os projetos definam seus próprios caminhos e nomes de arquivos de elementos, tornando a ferramenta totalmente reutilizável.
-* **Arquitetura Modular:** O código é limpo, organizado e fácil de estender, seguindo o Princípio da Responsabilidade Única.
-* **Suporte Multiplataforma:** A lógica de análise e sugestão funciona tanto para **Android** quanto para **iOS**.
+* **Diagnóstico por Triagem de Erros:** Identifica inteligentemente o *tipo* de falha (`NoSuchElementError`, `TimeoutError`, `Erro de Código Ruby`, `Falha de Asserção`, etc.) e gera um relatório específico e útil para cada cenário.
+* **Análise de Código-Fonte:** Para erros "silenciosos" (onde a mensagem não contém o seletor), a GEM inspeciona o `stack trace` para encontrar o arquivo e a linha exatos do erro, extraindo o seletor diretamente do código-fonte.
+* **Análise de Atributos Ponderados:** Em vez de uma simples comparação de strings, a GEM "desmonta" o seletor que falhou e o compara atributo por atributo com os elementos na tela, dando pesos diferentes para `resource-id`, `text`, etc., para encontrar o "candidato mais provável".
+* **Relatórios Ricos e Interativos:** Gera um relatório HTML completo com:
+    * Screenshot da falha.
+    * Diagnóstico claro da causa provável, com sugestões acionáveis.
+    * Abas com "Análise Avançada" e um "Dump Completo" de todos os elementos da tela.
+* **Altamente Configurável:** Permite a customização de caminhos para se adaptar a diferentes estruturas de projeto.
 
 ## 🚀 Instalação
 
 Adicione esta linha ao `Gemfile` do seu projeto de automação:
 
 ```ruby
-gem 'appium_failure_helper' # (ou o nome que você der para a sua gem)
+gem 'appium_failure_helper', git: 'URL_DO_SEU_REPOSITORIO_GIT' # Exemplo de instalação via Git
 ```
 
 E então execute no seu terminal:
@@ -31,106 +31,107 @@ E então execute no seu terminal:
 bundle install
 ```
 
-## ⚙️ Configuração (Opcional)
+## 🛠️ Uso e Configuração
 
-Para tornar a ferramenta flexível e adaptável a diferentes projetos, você pode configurar os caminhos onde os elementos são buscados. Crie um bloco de configuração no seu arquivo de inicialização (ex: `features/support/env.rb`).
+A integração ideal envolve 3 passos:
 
-**Se nenhuma configuração for fornecida, a ferramenta usará os valores padrão.**
+### Passo 1: Configurar a GEM (Opcional)
+
+No seu arquivo de inicialização (ex: `features/support/env.rb`), carregue a GEM e, se necessário, configure os caminhos onde seus elementos estão mapeados. Se nenhuma configuração for fornecida, a ferramenta usará os valores padrão.
 
 ```ruby
-# Em features/support/env.rb
+# features/support/env.rb
+require 'appium_failure_helper'
 
 AppiumFailureHelper.configure do |config|
-  # Caminho para a pasta que contém os arquivos de elementos.
   # Padrão: 'features/elements'
   config.elements_path = 'caminho/para/sua/pasta/de/elementos'
 
-  # Nome do arquivo principal de elementos Ruby.
   # Padrão: 'elementLists.rb'
   config.elements_ruby_file = 'meu_arquivo_de_elementos.rb'
 end
 ```
 
-### Opções Disponíveis
+### Passo 2: Enriquecer as Exceções (Altamente Recomendado)
 
-| Parâmetro             | Descrição                                                                      | Valor Padrão             |
-| --------------------- | ------------------------------------------------------------------------------ | ------------------------ |
-| `elements_path`       | Path relativo à raiz do projeto para a pasta que contém os arquivos de elementos. | `'features/elements'`    |
-| `elements_ruby_file`  | Nome do arquivo Ruby principal que define os elementos dentro da `elements_path`. | `'elementLists.rb'`      |
+Para que a GEM consiga extrair o máximo de detalhes de uma falha (especialmente de erros genéricos como `TimeoutError` ou `NoSuchElementError` sem detalhes), é crucial que a exceção que ela recebe seja rica em informações. A melhor maneira de garantir isso é ajustar seus métodos de busca de elementos.
 
-## 🛠️ Uso no Cucumber
-
-A integração é feita através de um hook `After` no seu ambiente de testes.
-
-**Exemplo completo para `features/support/env.rb`:**
+Crie ou ajuste um arquivo de helpers (ex: `features/support/appiumCustom.rb`) com a seguinte estrutura:
 
 ```ruby
-# features/support/env.rb
+# features/support/appiumCustom.rb
 
-require 'appium_lib'
-require 'cucumber'
-
-# 1. Carrega a sua ferramenta
-require 'appium_failure_helper'
-
-# 2. (Opcional) Configura os caminhos se forem diferentes do padrão
-AppiumFailureHelper.configure do |config|
-  config.elements_path = 'features/elements'
-  config.elements_ruby_file = 'elementLists.rb'
+# Métodos públicos que seus Page Objects irão chamar
+def find(el)
+  find_element_with_enriched_error(el)
 end
 
-# 3. Hook que executa após cada cenário de teste
-After do |scenario|
-  # Se o cenário falhou, aciona o seu helper
-  if scenario.failed?
-    puts "\n--- CENÁRIO FALHOU! ACIONANDO O DIAGNÓSTICO INTELIGENTE ---"
+def clickElement(el)
+  find_element_with_enriched_error(el).click
+end
+
+def waitForElementExist(el, timeout = 10)
+  wait = Selenium::WebDriver::Wait.new(timeout: timeout)
+  begin
+    wait.until { $driver.find_elements(el['tipoBusca'], el['value']).size > 0 }
+  rescue Selenium::WebDriver::Error::TimeoutError => e
+    # Relança o erro com uma mensagem rica que a GEM entende
+    new_message = "Timeout de #{timeout}s esperando pelo elemento: using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
+    raise e.class, new_message
+  end
+end
+
+private # --- Helper Interno ---
+
+# Este método é o coração da solução. Ele captura erros e os enriquece.
+def find_element_with_enriched_error(el)
+  begin
+    return $driver.find_element(el['tipoBusca'], el['value'])
+  rescue Selenium::WebDriver::Error::NoSuchElementError => e
+    # Cria uma nova mensagem explícita no formato "using... with value..."
+    new_message = "using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
     
-    # A chamada ao helper utiliza automaticamente as configurações definidas acima.
-    AppiumFailureHelper.handler_failure(@driver, scenario.exception)
-    
-    puts "--- HELPER FINALIZOU. VERIFIQUE A PASTA 'reports_failure' ---"
+    # Recria a exceção original com a nova mensagem.
+    new_exception = e.class.new(new_message)
+    new_exception.set_backtrace(e.backtrace) # Preserva o stack trace
+    raise new_exception
   end
 end
 ```
 
-## 📄 Entendendo o Relatório Gerado
+### Passo 3: Integrar com o Cucumber
 
-Após uma falha, uma nova pasta será criada na raiz do seu projeto: `reports_failure/failure_[timestamp]`. Dentro dela, o arquivo mais importante é o `report_[...].html`.
+Finalmente, no seu `hooks.rb`, acione a GEM no hook `After` em caso de falha.
 
-O relatório HTML é dividido em seções claras para um diagnóstico rápido:
+```ruby
+# features/support/hooks.rb
 
-#### Análise de Mapeamento (Bloco Verde/Amarelo)
-Informa se o elemento que falhou foi encontrado nos seus arquivos de mapeamento (`.rb` ou `.yaml`).
-* **Bloco Verde (Sucesso):** Confirma que o elemento foi encontrado. Isso sugere que a definição está correta, e o problema pode ser de timing ou visibilidade na tela.
-* **Bloco Amarelo (Aviso):** Informa que o elemento **não foi encontrado**. Isso geralmente aponta para um erro de digitação no nome do elemento no seu código de teste.
+After do |scenario|
+  if scenario.failed? && $driver&.session_id
+    AppiumFailureHelper.handler_failure($driver, scenario.exception)
+  end
+end
+```
 
-#### Elemento com Falha (Bloco Vermelho)
-Mostra exatamente qual `Tipo de Seletor` e `Valor Buscado` o Appium usou quando a falha ocorreu.
+## 📄 O Relatório Gerado
 
-#### Screenshot da Falha
-Uma imagem exata da tela no momento do erro.
+A cada falha, uma nova pasta é criada em `reports_failure/`, contendo o relatório `.html` e outros artefatos. O relatório pode ter dois formatos principais:
 
-#### Sugestões de Reparo (Análise de Similaridade)
-Lista os elementos na tela com localizadores parecidos com o que falhou, com uma pontuação de similaridade. Ideal para corrigir erros de digitação nos seletores.
+1.  **Relatório de Diagnóstico Simples:** Gerado para erros que não são de seletor (ex: falha de conexão, erro de código Ruby, falha de asserção). Ele mostra um diagnóstico direto, a mensagem de erro original e o `stack trace`.
 
-#### Dump Completo da Página
-Uma lista interativa de **todos os elementos** visíveis na tela, com todos os seus possíveis localizadores.
+2.  **Relatório Detalhado (para problemas de seletor):**
+    * **Coluna da Esquerda:** Mostra o "Elemento com Falha" (extraído da exceção ou do código), "Sugestões Encontradas no Código" e o "Screenshot".
+    * **Coluna da Direita:** Contém abas interativas:
+        * **Análise Avançada:** Apresenta o "candidato mais provável" encontrado na tela e uma análise comparativa de seus atributos (`resource-id`, `text`, etc.), com uma sugestão acionável.
+        * **Dump Completo:** Uma lista de todos os elementos da tela e seus possíveis seletores.
 
 ## 🏛️ Arquitetura do Código
 
-O código é modular para facilitar a manutenção e a extensibilidade.
-
-* `configuration.rb`: Classe que armazena as opções configuráveis e seus valores padrão.
-* `handler.rb`: O **Maestro**. Orquestra as chamadas para os outros módulos.
-* `analyzer.rb`: O **Analista**. Processa a mensagem de erro e calcula a similaridade.
-* `element_repository.rb`: O **Repositório**. Encontra e carrega as definições de elementos de arquivos `.yaml` e `.rb` usando os caminhos configurados.
-* `page_analyzer.rb`: O **Leitor de Tela**. Processa o XML da página para extrair elementos e sugerir nomes/localizadores.
-* `report_generator.rb`: O **Gerador**. Consolida todos os dados e cria os arquivos de relatório.
-* `utils.rb`: Funções auxiliares (Logger, etc.).
+A GEM é dividida em módulos com responsabilidades únicas para facilitar a manutenção e a extensibilidade (Handler, Analyzer, ReportGenerator, XPathFactory, etc.).
 
 ## 🤝 Como Contribuir
 
-Encontrou um bug ou tem uma ideia para uma nova funcionalidade? Abra uma *Issue* no repositório do projeto. Pull Requests são sempre bem-vindos!
+Pull Requests são bem-vindos. Para bugs ou sugestões, por favor, abra uma *Issue* no repositório.
 
 ## 📜 Licença
 
