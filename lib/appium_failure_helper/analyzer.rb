@@ -1,49 +1,24 @@
 module AppiumFailureHelper
   module Analyzer
-        def self.triage_error(exception)
-      case exception
-      when Selenium::WebDriver::Error::NoSuchElementError, Selenium::WebDriver::Error::TimeoutError
+    def self.triage_error(exception)
+      # Simples e direto: se for um desses erros, é um problema de seletor.
+      if exception.is_a?(Selenium::WebDriver::Error::NoSuchElementError) || exception.is_a?(Selenium::WebDriver::Error::TimeoutError)
         :locator_issue
-      when Selenium::WebDriver::Error::ElementNotInteractableError
-        :visibility_issue
-      when Selenium::WebDriver::Error::StaleElementReferenceError
-        :stale_element_issue
-      when defined?(RSpec::Expectations::ExpectationNotMetError) ? RSpec::Expectations::ExpectationNotMetError : Class.new
-        :assertion_failure
-      when NoMethodError, NameError, ArgumentError, TypeError
-        :ruby_code_issue
-      when Selenium::WebDriver::Error::SessionNotCreatedError, Errno::ECONNREFUSED
-        :session_startup_issue
-      when Selenium::WebDriver::Error::WebDriverError
-        return :app_crash_issue if exception.message.include?('session deleted because of page crash')
-        :unknown_appium_issue
       else
-        :unknown_issue
+        :generic_issue # Para todos os outros casos
       end
     end
 
     def self.extract_failure_details(exception)
       message = exception.message
       info = {}
-      patterns = [
-        /element with locator ['"]?(#?\w+)['"]?/i,
-        /(?:could not be found|cannot find element) using (.+?)=['"]?([^'"]+)['"]?/i,
-        /no such element: Unable to locate element: {"method":"([^"]+)","selector":"([^"]+)"}/i,
-        /(?:with the resource-id|with the accessibility-id) ['"]?(.+?)['"]?/i,
-         /using "([^"]+)" with value "([^"]+)"/
-      ]
-      patterns.each do |pattern|
-          match = message.match(pattern)
-          if match
-              if match.captures.size == 2
-                info[:selector_type] = match.captures[0].strip.gsub(/['"]/, '')
-                info[:selector_value] = match.captures[1].strip.gsub(/['"]/, '')
-              else
-                info[:selector_value] = match.captures.last.strip.gsub(/['"]/, '')
-                info[:selector_type] = 'id' # Padrão para regex com 1 captura
-              end
-              return info
-          end
+      # único padrão que precisa, para ler a mensagem enriquecida
+      pattern = /using "([^"]+)" with value "([^"]+)"/
+      
+      match = message.match(pattern)
+      if match
+        info[:selector_type] = match.captures[0]
+        info[:selector_value] = match.captures[1]
       end
       info
     end
