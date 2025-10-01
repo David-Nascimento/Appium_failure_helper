@@ -211,7 +211,7 @@ module AppiumFailureHelper
                   <div class="p-6">
                     <div id="strategies" class="tab-content active">
                       <h3 class="text-lg font-semibold text-indigo-700 mb-4">Estratégias de Localização Alternativas</h3>
-                      #{repair_strategies_content}
+                      #{repair_suggestions_content}
                     </div>
                     <div id="all" class="tab-content">
                       <h3 class="text-lg font-semibold text-gray-700 mb-4">Dump de Todos os Elementos da Tela</h3>
