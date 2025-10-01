@@ -59,14 +59,18 @@ module AppiumFailureHelper
       screenshot_base64 = @data[:screenshot_base64]
 
       locators_html = lambda do |locators|
-        (locators || []).map { |loc| "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{CGI.escapeHTML(loc[:strategy].to_s.upcase.gsub('_', ' '))}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{CGI.escapeHTML(loc[:locator])}</span></li>" }.join
+        (locators || []).map do |loc|
+          strategy_text = loc[:strategy].to_s.upcase.gsub('_', ' ')
+          "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{CGI.escapeHTML(strategy_text)}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{CGI.escapeHTML(loc[:locator])}</span></li>"
+        end.join
       end
 
       all_elements_html = lambda do |elements|
         (elements || []).map { |el| "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{CGI.escapeHTML(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html.call(el[:locators])}</ul></details>" }.join
       end
       
-      de_para_html = "" # (Sua lógica de_para_html)
+      failed_info_content = "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-all'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
+
       code_search_html = "" # (Sua lógica code_search_html)
       failed_info_content = if failed_info && !failed_info.empty?
          "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-all'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
@@ -78,20 +82,9 @@ module AppiumFailureHelper
       unless code_search_results.empty?
         suggestions_list = code_search_results.map do |match|
           score_percent = (match[:score] * 100).round(1)
-          <<~SUGGESTION
-            <div class='border border-sky-200 bg-sky-50 p-3 rounded-lg mb-2'>
-              <p class='text-sm text-gray-600'>Encontrado em: <strong class='font-mono'>#{match[:file]}:#{match[:line_number]}</strong></p>
-              <pre class='bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-auto'><code>#{CGI.escapeHTML(match[:code])}</code></pre>
-              <p class='text-xs text-green-600 mt-1'>Similaridade: #{score_percent}%</p>
-            </div>
-          SUGGESTION
+          "<div class='border border-sky-200 bg-sky-50 p-3 rounded-lg mb-2'><p class='text-sm text-gray-600'>Encontrado em: <strong class='font-mono'>#{match[:file]}:#{match[:line_number]}</strong></p><pre class='bg-gray-800 text-white p-2 rounded mt-2 text-xs overflow-auto'><code>#{CGI.escapeHTML(match[:code])}</code></pre><p class='text-xs text-green-600 mt-1'>Similaridade: #{score_percent}%</p></div>"
         end.join
-        code_search_html = <<~HTML
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h2 class="text-xl font-bold text-sky-700 mb-4">Sugestões Encontradas no Código</h2>
-            #{suggestions_list}
-          </div>
-        HTML
+        code_search_html = "<div class='bg-white p-4 rounded-lg shadow-md'><h2 class='text-xl font-bold text-sky-700 mb-4'>Sugestões Encontradas no Código</h2>#{suggestions_list}</div>"
       end
 
       # --- LÓGICA RESTAURADA: ELEMENTO COM FALHA ---
