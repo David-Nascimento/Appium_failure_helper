@@ -68,8 +68,12 @@ module AppiumFailureHelper
       
       de_para_html = "" # (Sua lógica de_para_html)
       code_search_html = "" # (Sua lógica code_search_html)
-      failed_info_content = if failed_info && !failed_info.empty?; # ... (Sua lógica failed_info_content)
-      else "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"; end
+      failed_info_content = if failed_info && !failed_info.empty?
+         "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-all'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
+      else
+        "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"
+      end
+
       code_search_html = ""
       unless code_search_results.empty?
         suggestions_list = code_search_results.map do |match|
@@ -97,11 +101,10 @@ module AppiumFailureHelper
         "<p class='text-sm text-gray-500'>O localizador exato não pôde ser extraído.</p>"
       end
 
-     repair_strategies_content = if alternative_xpaths.empty?
-        "<p class='text-gray-500'>Nenhuma estratégia de XPath alternativa pôde ser gerada para o elemento alvo.</p>"
+     repair_suggestions_content = if alternative_xpaths.empty?
+        "<p class='text-gray-500'>Nenhuma estratégia de localização alternativa pôde ser gerada.</p>"
       else
         pages = alternative_xpaths.each_slice(6).to_a
-        
         carousel_items = pages.map do |page_strategies|
           strategy_list_html = page_strategies.map do |strategy|
             reliability_color = case strategy[:reliability]
@@ -109,17 +112,21 @@ module AppiumFailureHelper
                                 when :media then 'bg-yellow-100 text-yellow-800'
                                 else 'bg-red-100 text-red-800'
                                 end
+            # CORREÇÃO: Adiciona o tipo de estratégia (ID, XPATH) ao lado do seletor
             <<~STRATEGY_ITEM
-              <div class='border border-gray-200 rounded-lg p-3 bg-white'>
-                <div class='flex justify-between items-center mb-2'>
+              <li class='border-b border-gray-200 py-3 last:border-b-0'>
+                <div class='flex justify-between items-center mb-1'>
                   <p class='font-semibold text-indigo-800 text-sm'>#{CGI.escapeHTML(strategy[:name])}</p>
                   <span class='text-xs font-medium px-2 py-0.5 rounded-full #{reliability_color}'>#{CGI.escapeHTML(strategy[:reliability].to_s.capitalize)}</span>
                 </div>
-                <pre class='bg-gray-800 text-white p-2 rounded text-xs whitespace-pre-wrap break-words'><code>#{CGI.escapeHTML(strategy[:locator])}</code></pre>
-              </div>
+                <div class='bg-gray-800 text-white p-2 rounded mt-1 text-xs whitespace-pre-wrap break-words font-mono'>
+                  <span class='font-bold text-indigo-400'>#{CGI.escapeHTML(strategy[:strategy].to_s.upcase)}:</span>
+                  <code class='ml-1'>#{CGI.escapeHTML(strategy[:locator])}</code>
+                </div>
+              </li>
             STRATEGY_ITEM
           end.join
-          "<div class='carousel-item w-full flex-shrink-0'><div class='space-y-3'>#{strategy_list_html}</div></div>"
+          "<div class='carousel-item w-full flex-shrink-0'><ul>#{strategy_list_html}</ul></div>"
         end.join
 
         <<~CAROUSEL
