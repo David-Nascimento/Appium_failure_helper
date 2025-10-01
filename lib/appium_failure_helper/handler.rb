@@ -21,13 +21,6 @@ module AppiumFailureHelper
 
         FileUtils.mkdir_p(@output_folder)
         
-        # --- DIAGNÓSTICO ADICIONADO AQUI ---
-        puts "\n--- DEBUG DE CAPABILITIES ---"
-        puts "Classe do Driver: #{@driver.class}"
-        puts "Conteúdo de @driver.capabilities:"
-        puts @driver.capabilities.inspect
-        puts "-----------------------------\n"
-        # ------------------------------------
 
         triage_result = Analyzer.triage_error(@exception)
         
