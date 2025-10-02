@@ -129,6 +129,12 @@ A cada falha, uma nova pasta é criada em `reports_failure/`, contendo o relató
 
 A GEM é dividida em módulos com responsabilidades únicas para facilitar a manutenção e a extensibilidade (Handler, Analyzer, ReportGenerator, XPathFactory, etc.).
 
+## 🔄 Fluxo Interno da GEM
+
+Abaixo o fluxo de como os módulos conversam entre si durante o diagnóstico de uma falha:
+
+![Fluxo Interno](img\fluxo_appium_failure_helper.png)
+
 ## 🤝 Como Contribuir
 
 Pull Requests são bem-vindos. Para bugs ou sugestões, por favor, abra uma *Issue* no repositório.

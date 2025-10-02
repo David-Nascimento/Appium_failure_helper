@@ -1,0 +1,72 @@
+#!/usr/bin/env ruby
+require 'fileutils'
+
+# Caminho do arquivo de versão
+VERSION_FILE = 'lib/appium_failure_helper/version.rb'
+
+# Lê a versão atual da gem
+def current_version
+  content = File.read(VERSION_FILE)
+  content.match(/(\d+)\.(\d+)\.(\d+)/).captures.map(&:to_i)
+end
+
+# Detecta tipo de alteração via git diff
+def change_type
+  diff = `git diff HEAD`
+  
+  # Exemplo simplificado de análise
+  if diff =~ /def .*!/   # métodos com ! ou alterações de assinatura podem ser breaking
+    :major
+  elsif diff =~ /def /    # novos métodos
+    :minor
+  else
+    :patch               # pequenas alterações
+  end
+end
+
+# Incrementa a versão
+def increment_version(version, type)
+  major, minor, patch = version
+  case type
+  when :major
+    major += 1
+    minor = 0
+    patch = 0
+  when :minor
+    minor += 1
+    patch = 0
+  when :patch
+    patch += 1
+  end
+  [major, minor, patch]
+end
+
+# Atualiza arquivo de versão
+def update_version_file(new_version)
+  content = File.read(VERSION_FILE)
+  new_content = content.gsub(/\d+\.\d+\.\d+/, new_version.join('.'))
+  File.write(VERSION_FILE, new_content)
+end
+
+# Commit e tag
+def git_commit_and_tag(new_version)
+  `git add .`
+  `git commit -m "Bump version to #{new_version.join('.')}"` 
+  `git tag v#{new_version.join('.')}`
+end
+
+# Publicar a GEM
+def push_gem
+  `gem build minha_gem.gemspec`
+  `gem push minha_gem-#{current_version.join('.')}.gem`
+end
+
+# Fluxo principal
+version = current_version
+type = change_type
+new_version = increment_version(version, type)
+update_version_file(new_version)
+git_commit_and_tag(new_version)
+push_gem
+
+puts "GEM publicada com sucesso! Nova versão: #{new_version.join('.')}"
