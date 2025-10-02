@@ -1,67 +1,65 @@
+
 # Appium Failure Helper: Diagnóstico Inteligente de Falhas
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Gem Version](https://img.shields.io/badge/gem-v3.0.0-blue)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)  
+![Gem Version](https://badge.fury.io/rb/appium_failure_helper.svg)  
+![License](https://img.shields.io/badge/license-MIT-lightgrey)  
 
-Uma GEM de diagnóstico para testes Appium em Ruby, projetada para transformar falhas de automação em insights acionáveis. Quando um teste falha por não encontrar um elemento, esta ferramenta gera um relatório HTML detalhado, identificando a causa provável do erro e acelerando drasticamente o tempo de depuração.
+Uma GEM de diagnóstico para testes Appium em Ruby, projetada para transformar falhas de automação em **insights acionáveis**. Quando um teste falha por não encontrar um elemento, a ferramenta gera um relatório HTML detalhado, identificando a causa provável e acelerando drasticamente o tempo de depuração.
+
+---
 
 ## ✨ Principais Funcionalidades
 
-* **Diagnóstico por Triagem de Erros:** Identifica inteligentemente o *tipo* de falha (`NoSuchElementError`, `TimeoutError`, `Erro de Código Ruby`, `Falha de Asserção`, etc.) e gera um relatório específico e útil para cada cenário.
-* **Análise de Código-Fonte:** Para erros "silenciosos" (onde a mensagem não contém o seletor), a GEM inspeciona o `stack trace` para encontrar o arquivo e a linha exatos do erro, extraindo o seletor diretamente do código-fonte.
-* **Análise de Atributos Ponderados:** Em vez de uma simples comparação de strings, a GEM "desmonta" o seletor que falhou e o compara atributo por atributo com os elementos na tela, dando pesos diferentes para `resource-id`, `text`, etc., para encontrar o "candidato mais provável".
-* **Relatórios Ricos e Interativos:** Gera um relatório HTML completo com:
-    * Screenshot da falha.
-    * Diagnóstico claro da causa provável, com sugestões acionáveis.
-    * Abas com "Análise Avançada" e um "Dump Completo" de todos os elementos da tela.
-* **Altamente Configurável:** Permite a customização de caminhos para se adaptar a diferentes estruturas de projeto.
+- **Diagnóstico Inteligente de Falhas:** Identifica automaticamente o tipo de erro (`NoSuchElementError`, `TimeoutError`, falha de asserção ou erro de código Ruby) e gera relatórios personalizados para cada caso.  
+- **Análise de Código-Fonte:** Para erros "silenciosos", inspeciona o `stack trace` e extrai o seletor diretamente do código, apontando arquivo e linha exatos.  
+- **Comparação Avançada de Atributos:** Compara atributo por atributo (`resource-id`, `text`, etc.) para encontrar o candidato mais provável na tela, evitando análises superficiais.  
+- **Relatórios Interativos:** HTML completo com:
+  - Screenshot da falha  
+  - Diagnóstico claro e sugestões acionáveis  
+  - Abas com "Análise Avançada" e "Dump Completo" de todos os elementos da tela  
+- **Configuração Flexível:** Personalize caminhos e arquivos de elementos para se adaptar a diferentes estruturas de projeto.
+
+---
 
 ## 🚀 Instalação
 
-Adicione esta linha ao `Gemfile` do seu projeto de automação:
+Adicione ao `Gemfile` do seu projeto de automação:
 
 ```ruby
-gem 'appium_failure_helper', git: 'URL_DO_SEU_REPOSITORIO_GIT' # Exemplo de instalação via Git
+gem 'appium_failure_helper', git: 'URL_DO_SEU_REPOSITORIO_GIT'
 ```
 
-E então execute no seu terminal:
+Depois execute:
 
 ```sh
 bundle install
 ```
 
+---
+
 ## 🛠️ Uso e Configuração
 
-A integração ideal envolve 3 passos:
+### 1️⃣ Configuração Inicial (Opcional)
 
-### Passo 1: Configurar a GEM (Opcional)
-
-No seu arquivo de inicialização (ex: `features/support/env.rb`), carregue a GEM e, se necessário, configure os caminhos onde seus elementos estão mapeados. Se nenhuma configuração for fornecida, a ferramenta usará os valores padrão.
+No arquivo de inicialização (`features/support/env.rb`), configure os caminhos de elementos se necessário:
 
 ```ruby
-# features/support/env.rb
 require 'appium_failure_helper'
 
 AppiumFailureHelper.configure do |config|
-  # Padrão: 'features/elements'
-  config.elements_path = 'caminho/para/sua/pasta/de/elementos'
-
-  # Padrão: 'elementLists.rb'
-  config.elements_ruby_file = 'meu_arquivo_de_elementos.rb'
+  config.elements_path      = 'features/elements'      # Pasta de elementos
+  config.elements_ruby_file = 'elementLists.rb'       # Arquivo Ruby de elementos
 end
 ```
 
-### Passo 2: Enriquecer as Exceções (Altamente Recomendado)
+---
 
-Para que a GEM consiga extrair o máximo de detalhes de uma falha (especialmente de erros genéricos como `TimeoutError` ou `NoSuchElementError` sem detalhes), é crucial que a exceção que ela recebe seja rica em informações. A melhor maneira de garantir isso é ajustar seus métodos de busca de elementos.
+### 2️⃣ Enriquecer Exceções (Altamente Recomendado)
 
-Crie ou ajuste um arquivo de helpers (ex: `features/support/appiumCustom.rb`) com a seguinte estrutura:
+Para extrair o máximo de informações de falhas, ajuste seus métodos de busca de elementos:
 
 ```ruby
-# features/support/appiumCustom.rb
-
-# Métodos públicos que seus Page Objects irão chamar
 def find(el)
   find_element_with_enriched_error(el)
 end
@@ -75,37 +73,28 @@ def waitForElementExist(el, timeout = 10)
   begin
     wait.until { $driver.find_elements(el['tipoBusca'], el['value']).size > 0 }
   rescue Selenium::WebDriver::Error::TimeoutError => e
-    # Relança o erro com uma mensagem rica que a GEM entende
-    new_message = "Timeout de #{timeout}s esperando pelo elemento: using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
-    raise e.class, new_message
+    raise e.class, "Timeout de #{timeout}s esperando pelo elemento: using \"\#{el['tipoBusca']}\" with value \"\#{el['value']}\""
   end
 end
 
-private # --- Helper Interno ---
+private
 
-# Este método é o coração da solução. Ele captura erros e os enriquece.
 def find_element_with_enriched_error(el)
-  begin
-    return $driver.find_element(el['tipoBusca'], el['value'])
-  rescue Selenium::WebDriver::Error::NoSuchElementError => e
-    # Cria uma nova mensagem explícita no formato "using... with value..."
-    new_message = "using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
-    
-    # Recria a exceção original com a nova mensagem.
-    new_exception = e.class.new(new_message)
-    new_exception.set_backtrace(e.backtrace) # Preserva o stack trace
-    raise new_exception
-  end
+  $driver.find_element(el['tipoBusca'], el['value'])
+rescue Selenium::WebDriver::Error::NoSuchElementError => e
+  new_exception = e.class.new("using \"\#{el['tipoBusca']}\" with value \"\#{el['value']}\"")
+  new_exception.set_backtrace(e.backtrace)
+  raise new_exception
 end
 ```
 
-### Passo 3: Integrar com o Cucumber
+---
 
-Finalmente, no seu `hooks.rb`, acione a GEM no hook `After` em caso de falha.
+### 3️⃣ Integração com Cucumber
+
+No `hooks.rb`, acione a GEM após cada cenário com falha:
 
 ```ruby
-# features/support/hooks.rb
-
 After do |scenario|
   if scenario.failed? && $driver&.session_id
     AppiumFailureHelper.handler_failure($driver, scenario.exception)
@@ -113,32 +102,54 @@ After do |scenario|
 end
 ```
 
-## 📄 O Relatório Gerado
+---
 
-A cada falha, uma nova pasta é criada em `reports_failure/`, contendo o relatório `.html` e outros artefatos. O relatório pode ter dois formatos principais:
+## 📄 Relatório Gerado
 
-1.  **Relatório de Diagnóstico Simples:** Gerado para erros que não são de seletor (ex: falha de conexão, erro de código Ruby, falha de asserção). Ele mostra um diagnóstico direto, a mensagem de erro original e o `stack trace`.
+A cada falha, a GEM cria uma pasta em `reports_failure/` com:
 
-2.  **Relatório Detalhado (para problemas de seletor):**
-    * **Coluna da Esquerda:** Mostra o "Elemento com Falha" (extraído da exceção ou do código), "Sugestões Encontradas no Código" e o "Screenshot".
-    * **Coluna da Direita:** Contém abas interativas:
-        * **Análise Avançada:** Apresenta o "candidato mais provável" encontrado na tela e uma análise comparativa de seus atributos (`resource-id`, `text`, etc.), com uma sugestão acionável.
-        * **Dump Completo:** Uma lista de todos os elementos da tela e seus possíveis seletores.
+1. **Relatório Simples:** Para falhas genéricas, mostrando erro, stack trace e diagnóstico direto.  
+2. **Relatório Detalhado:** Para problemas de seletor:
+   - **Coluna Esquerda:** Elemento com falha, seletores sugeridos e screenshot.  
+   - **Coluna Direita:** Abas interativas:
+     - **Análise Avançada:** Mostra o candidato mais provável, atributos comparados e sugestões acionáveis.  
+     - **Dump Completo:** Lista todos os elementos e possíveis seletores da tela.
 
-## 🏛️ Arquitetura do Código
+---
 
-A GEM é dividida em módulos com responsabilidades únicas para facilitar a manutenção e a extensibilidade (Handler, Analyzer, ReportGenerator, XPathFactory, etc.).
+## 🏛️ Arquitetura
+
+- **Handler:** Captura falhas e aciona o fluxo de análise.  
+- **SourceCodeAnalyzer:** Extrai seletores diretamente do código-fonte.  
+- **PageAnalyzer:** Analisa o `page_source` e sugere nomes e locators alternativos.  
+- **XPathFactory:** Gera estratégias de localização (diretas, combinatórias, parent-based, relativas, parciais, booleanas e posicionais).  
+- **ReportGenerator:** Cria relatórios HTML, XML e YAML ricos e interativos.
+
+---
 
 ## 🔄 Fluxo Interno da GEM
 
-Abaixo o fluxo de como os módulos conversam entre si durante o diagnóstico de uma falha:
+```
+Falha Appium
+     │
+     ├─► SourceCodeAnalyzer → {selector_type, selector_value}
+     │
+     └─► PageAnalyzer → [{name, locators, attributes}, ...]
+                │
+                └─► XPathFactory → [estratégias alternativas]
+     │
+     ▼
+ReportGenerator → HTML / XML / YAML
+```
 
-![Fluxo Interno](img\fluxo_appium_failure_helper.png)
+---
 
-## 🤝 Como Contribuir
+## 🤝 Contribuindo
 
-Pull Requests são bem-vindos. Para bugs ou sugestões, por favor, abra uma *Issue* no repositório.
+Pull requests e issues são bem-vindos! Abra uma *Issue* para bugs ou sugestões.
+
+---
 
 ## 📜 Licença
 
-Este projeto é distribuído sob a licença MIT.
+MIT License

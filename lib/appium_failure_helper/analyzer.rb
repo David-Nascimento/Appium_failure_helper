@@ -6,6 +6,9 @@ module AppiumFailureHelper
            Selenium::WebDriver::Error::TimeoutError,
            Selenium::WebDriver::Error::UnknownCommandError
         :locator_issue
+      when Selenium::WebDriver::Error::TimeoutError, 
+           Appium::Core::Wait::TimeoutError
+        :locator_issue
       when Selenium::WebDriver::Error::ElementNotInteractableError
         :visibility_issue
       when Selenium::WebDriver::Error::StaleElementReferenceError

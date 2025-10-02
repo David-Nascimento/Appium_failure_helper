@@ -7,3 +7,10 @@ gemspec
 
 gem "irb"
 gem "rake", "~> 13.0"
+gem "ffi"
+
+# Gemfile
+group :test do
+  gem 'rspec'
+  gem 'rspec-mocks'
+end

@@ -1,8 +1,15 @@
-#!/usr/bin/env ruby
 require 'fileutils'
-
+require 'selenium-webdriver'
+require_relative 'lib/appium_failure_helper'
 # Caminho do arquivo de versão
 VERSION_FILE = 'lib/appium_failure_helper/version.rb'
+
+# Executa os testes e retorna true se todos passarem
+def tests_pass?
+  puts "Rodando testes..."
+  system('bundle exec rspec')
+  $?.success?
+end
 
 # Lê a versão atual da gem
 def current_version
@@ -56,17 +63,20 @@ def git_commit_and_tag(new_version)
 end
 
 # Publicar a GEM
-def push_gem
+def push_gem(new_version)
   `gem build appium_failure_helper.gemspec`
-  `gem push appium_failure_helper-#{current_version.join('.')}.gem`
+  `gem push appium_failure_helper-#{new_version.join('.')}.gem`
 end
 
 # Fluxo principal
-version = current_version
-type = change_type
-new_version = increment_version(version, type)
-update_version_file(new_version)
-git_commit_and_tag(new_version)
-push_gem
-
-puts "GEM publicada com sucesso! Nova versão: #{new_version.join('.')}"
+if tests_pass?
+  version = current_version
+  type = change_type
+  new_version = increment_version(version, type)
+  update_version_file(new_version)
+  git_commit_and_tag(new_version)
+  push_gem(new_version)
+  puts "GEM publicada com sucesso! Nova versão: #{new_version.join('.')}"
+else
+  puts "Testes falharam! Commit e push cancelados."
+end

@@ -32,21 +32,24 @@ module AppiumFailureHelper
         }
 
         if triage_result == :locator_issue
-          page_source = @driver.page_source
+          page_source = @driver.page_source rescue nil
           doc = Nokogiri::XML(page_source)
 
+          # Inicializa failed_info primeiro
           failed_info = Analyzer.extract_failure_details(@exception) || {}
-          if failed_info.empty?
-            failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
-          end
-          
-          if failed_info.empty?
-            report_data[:triage_result] = :unidentified_locator_issue
-          else
+          failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {} if failed_info.empty?
+          failed_info = { selector_type: 'unknown', selector_value: 'unknown' } if failed_info.empty?
+
+          # Monta o report_data
+          report_data[:page_source] = page_source
+          report_data[:failed_element] = failed_info
+
+          # Analisa elementos similares, alternative xpaths, de_para, code search etc
+          unless failed_info.empty?
             page_analyzer = PageAnalyzer.new(page_source, report_data[:platform].to_s)
             all_page_elements = page_analyzer.analyze || []
             similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements) || []
-            
+
             alternative_xpaths = []
             if !similar_elements.empty?
               target_suggestion = similar_elements.first
@@ -60,21 +63,22 @@ module AppiumFailureHelper
             de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
             code_search_results = CodeSearcher.find_similar_locators(failed_info) || []
 
-            report_data.merge!({
-              page_source: page_source,
-              failed_element: failed_info,
+            report_data.merge!(
               similar_elements: similar_elements,
               alternative_xpaths: alternative_xpaths,
               de_para_analysis: de_para_result,
               code_search_results: code_search_results,
               all_page_elements: all_page_elements
-            })
+            )
           end
-        end
 
-        ReportGenerator.new(@output_folder, report_data).generate_all
-        Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
-        
+          # Gera o relatório
+          ReportGenerator.new(@output_folder, report_data).generate_all
+          Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
+
+          report_data
+          return
+        end
       rescue => e
         Utils.logger.error("Erro fatal na GEM de diagnóstico: #{e.message}\n#{e.backtrace.join("\n")}")
       end
