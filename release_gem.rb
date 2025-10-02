@@ -60,6 +60,7 @@ def git_commit_and_tag(new_version)
   `git add .`
   `git commit -m "Bump version to #{new_version.join('.')}"` 
   `git tag v#{new_version.join('.')}`
+  `git push && git push --tags`
 end
 
 # Publicar a GEM

@@ -1,61 +1,62 @@
-# spec/appium_failure_helper/handler_spec.rb
+# spec/handler_spec.rb
 require 'spec_helper'
-require 'fileutils'
+require 'appium_lib'
 require 'selenium-webdriver'
+require 'nokogiri'
 require_relative '../lib/appium_failure_helper'
 
 RSpec.describe AppiumFailureHelper::Handler do
-  let(:driver) do
-    instance_double("Appium::Core::Base::Driver",
-                    session_id: "fake_session",
-                    capabilities: { 'platformName' => 'Android' },
-                    screenshot_as: "fake_screenshot",
-                    page_source: "<xml></xml>")
-  end
-  let(:exception) { Selenium::WebDriver::Error::NoSuchElementError.new('element not found') }
-  let(:timestamp) { Time.now.strftime('%Y%m%d_%H%M%S') }
-  let(:output_folder) { "reports_failure/failure_#{timestamp}" }
-  let(:captured_report_data) { {} }
-   
+  let(:driver) { double('driver') }
+  let(:screenshot_base64) { 'base64string' }
+  let(:page_source) { '<root><element id="btn_login"/></root>' }
+
   before do
-    allow(driver).to receive(:session_id).and_return('12345')
-    allow(driver).to receive(:capabilities).and_return({ 'platformName' => 'Android' })
-    allow(driver).to receive(:screenshot_as).with(:base64).and_return('screenshot_base64')
-    allow(driver).to receive(:page_source).and_return('<xml><element id="1"/></xml>')
+    allow(driver).to receive(:session_id).and_return('123')
+    allow(driver).to receive(:capabilities).and_return({'platformName' => 'Android'})
+    allow(driver).to receive(:screenshot_as).with(:base64).and_return(screenshot_base64)
+    allow(driver).to receive(:page_source).and_return(page_source)
+
+    allow(AppiumFailureHelper::Utils.logger).to receive(:info)
+    allow(AppiumFailureHelper::Utils.logger).to receive(:error)
+    allow(AppiumFailureHelper::Utils.logger).to receive(:debug)
+
     allow(FileUtils).to receive(:mkdir_p)
+
+    allow(AppiumFailureHelper::ElementRepository).to receive(:load_all).and_return({
+      'btn_login' => { 'tipoBusca' => 'id', 'valor' => 'btn_login' }
+    })
+
     allow(AppiumFailureHelper::Analyzer).to receive(:triage_error).and_return(:locator_issue)
-    allow(AppiumFailureHelper::Analyzer).to receive(:extract_failure_details).and_return({ selector_type: 'id', selector_value: 'btn_login' })
-    allow(AppiumFailureHelper::SourceCodeAnalyzer).to receive(:extract_from_exception).and_return({})
-    allow(AppiumFailureHelper::PageAnalyzer).to receive(:new).and_return(double(analyze: []))
-    allow(AppiumFailureHelper::ElementRepository).to receive(:load_all).and_return([])
+    allow(AppiumFailureHelper::Analyzer).to receive(:extract_failure_details).and_return({})
     allow(AppiumFailureHelper::Analyzer).to receive(:find_similar_elements).and_return([])
-    allow(AppiumFailureHelper::Analyzer).to receive(:find_de_para_match).and_return([])
+    allow(AppiumFailureHelper::Analyzer).to receive(:find_de_para_match).and_return({})
     allow(AppiumFailureHelper::CodeSearcher).to receive(:find_similar_locators).and_return([])
-    allow(AppiumFailureHelper::Utils).to receive_message_chain(:logger, :info)
+    allow(AppiumFailureHelper::PageAnalyzer).to receive(:new).and_return(double(analyze: []))
+    allow(AppiumFailureHelper::XPathFactory).to receive(:generate_for_node).and_return(['//xpath/alternative'])
     allow_any_instance_of(AppiumFailureHelper::ReportGenerator).to receive(:generate_all)
-    allow(AppiumFailureHelper::ReportGenerator).to receive(:new) do |folder, report_data|
-      captured_report_data.replace(report_data) # armazena o report_data real
-      instance_double("ReportGenerator", generate_all: true)
-    end
   end
 
-  it "preenche report_data[:failed_element] corretamente" do
+  it 'preenche report_data[:failed_element] corretamente com fallback' do
+    exception = Selenium::WebDriver::Error::NoSuchElementError.new('using "id" with value "btn_login"')
     handler = described_class.new(driver, exception)
-    handler.call
+    report_data = handler.call
 
-    expect(captured_report_data).to be_a(Hash)
-    expect(captured_report_data[:failed_element]).to include(:selector_type, :selector_value)
-
+    expect(report_data).to be_a(Hash)
+    expect(report_data[:failed_element]).to eq({ selector_type: 'id', selector_value: 'btn_login' })
+    expect(report_data[:triage_result]).to eq(:locator_issue)
   end
 
+  it 'gera relatório mesmo em TimeoutError' do
+    exception = Selenium::WebDriver::Error::TimeoutError.new('No such element: {"method":"id","selector":"btn_login"}')
+    handler = described_class.new(driver, exception)
+    report_data = handler.call
 
-  it 'gera relatório analítico mesmo em NoSuchElementError' do
-    handler = described_class.new(driver, Selenium::WebDriver::Error::NoSuchElementError.new('not found'))
-    expect { handler.call }.not_to raise_error
+    expect(report_data).to be_a(Hash)
+    expect(report_data[:failed_element]).to eq({ selector_type: 'id', selector_value: 'btn_login' })
   end
 
   it 'não levanta erro de undefined local variable' do
-    handler = described_class.new(driver, exception)
-    expect { handler.call }.not_to raise_error
+    exception = Selenium::WebDriver::Error::NoSuchElementError.new('using "id" with value "btn_login"')
+    expect { described_class.new(driver, exception).call }.not_to raise_error
   end
 end

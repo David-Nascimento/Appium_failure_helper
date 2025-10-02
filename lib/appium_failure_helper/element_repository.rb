@@ -1,6 +1,7 @@
 # lib/appium_failure_helper/element_repository.rb
 module AppiumFailureHelper
   module ElementRepository
+    ELEMENTS = {}
     def self.load_all
       config = AppiumFailureHelper.configuration
       base_path = config.elements_path
@@ -38,48 +39,26 @@ module AppiumFailureHelper
       map
     end
     
-    def self.load_all_from_yaml(base_path)
-      elements_map = {}
-      glob_path = File.join(base_path, '**', '*.yaml')
-      files_found = Dir.glob(glob_path)
-      files_found.each do |file|
-        next if file.include?('reports_failure')
+    def self.load_all_from_yaml(dir_path = 'features/elements')
+      Dir.glob("#{dir_path}/*.yaml").each do |file|
         begin
-          data = YAML.load_file(file)
-          if data.is_a?(Hash)
-            data.each do |k, v|
-              data[k] = normalize_element(v)
-            end
-            elements_map.merge!(data)
+          yaml_data = YAML.load_file(file)
+          yaml_data.each do |key, value|
+            ELEMENTS[key.to_sym] = normalize_element(value)
           end
         rescue => e
           Utils.logger.warn("Aviso: Erro ao carregar o arquivo YAML #{file}: #{e.message}")
         end
       end
-      elements_map
+      Utils.logger.info("Número de elementos carregados: #{ELEMENTS.size}")
+      ELEMENTS
     end
 
-    def self.normalize_yaml_hash_keys(obj)
-      case obj
-      when Hash
-        result = {}
-        obj.each do |k, v|
-          k_s = k.to_s
-          v_n = normalize_yaml_hash_keys(v)
-          # Se v_n é um Hash com chaves :value ou 'valor' -> faça unificação para 'value'
-          if v_n.is_a?(Hash)
-            if v_n.key?('valor') && !v_n.key?('value')
-              v_n['value'] = v_n.delete('valor')
-            end
-            # também converte :tipoBusca para 'tipoBusca' (string)
-          end
-          result[k_s] = v_n
-        end
-        result
-      when Array
-        obj.map { |el| normalize_yaml_hash_keys(el) }
-      else
-        obj
+    def self.normalize_element(element_hash)
+      # Ajuste para garantir keys simbólicas e paths padrão
+      element_hash.transform_keys(&:to_sym).tap do |h|
+        h[:selector_type] ||= h[:type] || 'unknown'
+        h[:selector_value] ||= h[:value] || 'unknown'
       end
     end
   end
