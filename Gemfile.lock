@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    appium_failure_helper (1.2.4)
+    appium_failure_helper (1.3.0)
       appium_lib (~> 10.0)
       nokogiri (~> 1.15)
 

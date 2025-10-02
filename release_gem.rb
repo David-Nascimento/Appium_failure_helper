@@ -57,8 +57,8 @@ end
 
 # Publicar a GEM
 def push_gem
-  `gem build minha_gem.gemspec`
-  `gem push minha_gem-#{current_version.join('.')}.gem`
+  `gem build appium_failure_helper.gemspec`
+  `gem push appium_failure_helper-#{current_version.join('.')}.gem`
 end
 
 # Fluxo principal
