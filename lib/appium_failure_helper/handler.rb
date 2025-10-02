@@ -1,4 +1,3 @@
-# lib/appium_failure_helper/handler.rb
 module AppiumFailureHelper
   class Handler
     def self.call(driver, exception)
@@ -16,19 +15,19 @@ module AppiumFailureHelper
       begin
         unless @driver && @driver.session_id
           Utils.logger.error("Helper não executado: driver nulo ou sessão encerrada.")
-          Utils.logger.error("Exceção original: #{@exception.message}")
           return
         end
 
         FileUtils.mkdir_p(@output_folder)
         
+
         triage_result = Analyzer.triage_error(@exception)
         
         report_data = {
           exception: @exception,
           triage_result: triage_result,
           timestamp: @timestamp,
-          platform: @driver.capabilities['platformName'] || @driver.capabilities[:platformName] || 'unknown',
+          platform: @driver.capabilities['platformName'] || @driver.capabilities[:platform_name] || 'unknown',
           screenshot_base64: @driver.screenshot_as(:base64)
         }
 
