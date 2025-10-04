@@ -1,7 +1,0 @@
----
-btnConfirmar:
-  type: id
-  value: confirm_button
-inputEmail:
-  type: xpath
-  value: "//android.widget.EditText"

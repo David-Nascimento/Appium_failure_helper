@@ -1,4 +1,0 @@
----
-btnLogin:
-  type: id
-  value: com.app:id/login_button

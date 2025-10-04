@@ -1,10 +1,178 @@
-/.bundle/
-/.yardoc
-/_yardoc/
-/coverage/
-/doc/
-/pkg/
-/spec/reports/
-/tmp/
+##############################################
+# GITIGNORE PADRÃO PARA PROJETOS RUBY
+# Inclui suporte a: Rails, Gems, Cucumber, RSpec, Appium e Bundler
+##############################################
 
-gemfiles.lock
+# --------------------------------------------
+# ARQUIVOS DE SISTEMA / AMBIENTE
+# --------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+Icon?
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+*.orig
+
+# --------------------------------------------
+# CONFIGURAÇÕES DE IDEs E EDITORES
+# --------------------------------------------
+.vscode/
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# --------------------------------------------
+# RUBY E BUNDLER
+# --------------------------------------------
+*.gem
+*.rbc
+/.bundle/
+vendor/bundle/
+.bundle/
+Gemfile.lock         # opcional em gems, mas mantenha em apps
+config/master.key    # Rails 5+ credentials
+config/credentials.yml.enc
+.byebug_history
+
+# --------------------------------------------
+# RBENV / RVM / RUBY VERSIONS
+# --------------------------------------------
+.rbenv-version
+.ruby-version
+.ruby-gemset
+.rvmrc
+
+# --------------------------------------------
+# LOGS E TEMPORÁRIOS
+# --------------------------------------------
+log/*
+tmp/*
+!/log/.keep
+!/tmp/.keep
+*.pid
+*.seed
+*.pid.lock
+
+# --------------------------------------------
+# CACHE E RELATÓRIOS
+# --------------------------------------------
+coverage/
+spec/reports/
+reports/
+test/tmp/
+test/version_tmp/
+rerun.txt
+pickle-email-*.html
+.cucumber
+allure-results/
+allure-report/
+reports_failure/
+report.html
+
+# --------------------------------------------
+# TESTES E FRAMEWORKS
+# --------------------------------------------
+# Cucumber
+features/reports/
+features/output/
+features/logs/
+features/screenshots/
+features/html_reports/
+features/failure_screens/
+*.feature.backup
+*.feature.save
+
+# RSpec
+.rspec_status
+rspec_failures.log
+
+# Appium
+appium.txt
+appium.log
+*.apk
+*.ipa
+screenshots/
+video.mp4
+
+# Capybara
+capybara-*.html
+capybara-*.png
+
+# --------------------------------------------
+# DOCUMENTAÇÃO E GERADORES
+# --------------------------------------------
+doc/
+.yardoc/
+_yardoc/
+coverage/
+site/
+pkg/
+rdoc/
+/doc/api/
+
+# --------------------------------------------
+# RAILS ESPECÍFICO
+# --------------------------------------------
+/public/assets
+/public/packs
+/public/packs-test
+/public/system
+/public/uploads
+/node_modules
+/yarn-error.log
+.byebug_history
+/storage/*
+!/storage/.keep
+
+# Arquivos de banco de dados
+db/*.sqlite3
+db/*.sqlite3-journal
+db/schema.rb
+db/structure.sql
+db/*.sqlite*
+!/db/migrate/
+
+# --------------------------------------------
+# TESTE AUTOMATIZADO E CI/CD
+# --------------------------------------------
+.jenkins/
+.github/
+.gitlab/
+.circleci/
+ci-reports/
+ci-temp/
+tmp/screenshots/
+
+# --------------------------------------------
+# GEM E ARTEFATOS DE EMPACOTAMENTO
+# --------------------------------------------
+pkg/
+coverage/
+.rdoc/
+.yardoc/
+*.gem
+*.rbc
+
+# --------------------------------------------
+# OUTROS
+# --------------------------------------------
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+*.p12
+*.keystore
+credentials.json
+*.retry
+*.dump
+*.zip
+*.7z
