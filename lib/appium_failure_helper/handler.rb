@@ -68,13 +68,13 @@ module AppiumFailureHelper
 
         ReportGenerator.new(@output_folder, report_data).generate_all
         Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
-
       rescue => e
         puts "--- ERRO FATAL NA GEM ---"
         puts "CLASSE: #{e.class}, MENSAGEM: #{e.message}"
         puts e.backtrace.join("\n")
         puts "-------------------------"
       end
+      report_data
     end
 
     private
