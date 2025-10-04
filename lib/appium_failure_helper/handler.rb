@@ -13,9 +13,7 @@ module AppiumFailureHelper
 
     def call
       begin
-        puts "\n--- INÍCIO DO DIAGNÓSTICO DA GEM ---"
         unless @driver && @driver.session_id
-          puts "DEBUG: Helper não executado: driver nulo ou sessão encerrada."
           return
         end
 
@@ -34,39 +32,27 @@ module AppiumFailureHelper
         if triage_result == :locator_issue
           page_source = @driver.page_source
           doc = Nokogiri::XML(page_source)
-          puts "DEBUG HANDLER: Page source recebido (Tamanho: #{page_source.length})."
 
           failed_info = Analyzer.extract_failure_details(@exception) || {}
           if failed_info.empty?
             failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
           end
-          puts "DEBUG HANDLER: Detalhes do elemento com falha: #{failed_info.inspect}"
 
           if failed_info.empty?
             report_data[:triage_result] = :unidentified_locator_issue
-            puts "DEBUG HANDLER: Seletor não pode ser identificado. Gerando relatório simples."
           else
             page_analyzer = PageAnalyzer.new(page_source, platform)
             all_page_elements = page_analyzer.analyze || []
-            puts "DEBUG HANDLER: PageAnalyzer encontrou #{all_page_elements.size} elementos na tela."
 
             best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform)
-            puts "DEBUG HANDLER: Resultado da Análise Avançada (Melhor Candidato): #{best_candidate_analysis ? best_candidate_analysis[:name] : 'Nenhum'}"
 
             alternative_xpaths = []
             if best_candidate_analysis
               if best_candidate_analysis[:attributes] && (target_path = best_candidate_analysis[:attributes][:path])
-                puts "DEBUG HANDLER: Encontrado 'path' do candidato: '#{target_path}'"
                 target_node = doc.at_xpath(target_path)
                 if target_node
-                  puts "DEBUG HANDLER: Nó XML do candidato encontrado. Acionando XPathFactory..."
                   alternative_xpaths = XPathFactory.generate_for_node(target_node)
-                  puts "DEBUG HANDLER: XPathFactory gerou #{alternative_xpaths.size} estratégias."
-                else
-                  puts "DEBUG HANDLER ERROR: Não foi possível encontrar o nó XML usando o path: '#{target_path}'"
                 end
-              else
-                puts "DEBUG HANDLER WARNING: 'Melhor candidato' foi encontrado, mas ele não continha o atributo ':path' para gerar os XPaths."
               end
             end
 
@@ -89,7 +75,6 @@ module AppiumFailureHelper
         puts e.backtrace.join("\n")
         puts "-------------------------"
       end
-      puts "--- FIM DO DIAGNÓSTICO DA GEM ---"
     end
 
     private
@@ -97,32 +82,26 @@ module AppiumFailureHelper
     def fetch_failed_element
       msg = @exception&.message.to_s
 
-      # 1) pattern: using "type" with value "value"
       if (m = msg.match(/using\s+["']?([^"']+)["']?\s+with\s+value\s+["']([^"']+)["']/i))
         return { selector_type: m[1], selector_value: m[2] }
       end
 
-      # 2) JSON-like: {"method":"id","selector":"btn"}
       if (m = msg.match(/"method"\s*:\s*"([^"]+)"[\s,}].*"selector"\s*:\s*"([^"]+)"/i))
         return { selector_type: m[1], selector_value: m[2] }
       end
 
-      # 3) generic quoted token "value" or 'value'
       if (m = msg.match(/["']([^"']+)["']/))
         maybe_value = m[1]
-        # try lookup in repo by that value
         unified_map = ElementRepository.load_all rescue {}
         found = find_in_element_repository_by_value(maybe_value, unified_map)
         if found
           return found
         end
 
-        # guess type from message heuristics
         guessed_type = msg[/\b(xpath|id|accessibility id|css)\b/i] ? $&.downcase : nil
         return { selector_type: guessed_type || 'unknown', selector_value: maybe_value }
       end
 
-      # 4) try SourceCodeAnalyzer
       begin
         code_info = SourceCodeAnalyzer.extract_from_exception(@exception) rescue {}
         unless code_info.nil? || code_info.empty?
@@ -130,15 +109,12 @@ module AppiumFailureHelper
         end
       rescue => _; end
 
-      # 5) fallback: try to inspect unified map for likely candidates (keys or inner values)
       unified_map = ElementRepository.load_all rescue {}
-      # try to match any key that looks like an identifier present in the message
       unified_map.each do |k, v|
         k_str = k.to_s.downcase
         if msg.downcase.include?(k_str)
           return normalize_repo_element(v)
         end
-        # inspect value fields
         vals = []
         if v.is_a?(Hash)
           vals << v['valor'] if v.key?('valor')

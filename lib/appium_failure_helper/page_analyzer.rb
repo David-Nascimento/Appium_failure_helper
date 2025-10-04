@@ -25,7 +25,6 @@ module AppiumFailureHelper
       @doc.xpath('//*').each do |node|
         next if ['hierarchy', 'AppiumAUT'].include?(node.name)
 
-        # FORMA CORRETA DE EXTRAIR TODOS OS ATRIBUTOS
         attrs = node.attribute_nodes.to_h { |attr| [attr.name, attr.value] }
 
         attrs['tag'] = node.name

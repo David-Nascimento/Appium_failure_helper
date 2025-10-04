@@ -270,6 +270,7 @@ module AppiumFailureHelper
 
     def build_simple_diagnosis_report(title:, message:)
       exception = @data[:exception]
+      screenshot = @data[:screenshot_base_64]
       error_message_html = CGI.escapeHTML(exception.message.to_s)
       backtrace_html = CGI.escapeHTML(exception.backtrace.join("\n"))
 
@@ -291,7 +292,7 @@ module AppiumFailureHelper
               <div class="md:col-span-1">
                 <div class="bg-white p-4 rounded-lg shadow-md">
                   <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
-                  <img src="data:image/png;base64,#{@data[:screenshot_base64]}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
+                  <img src="data:image/png;base64,#{screenshot}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
                 </div>
               </div>
               <div class="md:col-span-2 space-y-6">
