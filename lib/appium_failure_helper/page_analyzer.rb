@@ -20,28 +20,21 @@ module AppiumFailureHelper
       @platform = platform
     end
 
-     def analyze
-      seen_elements = {}
+    def analyze
       all_elements_suggestions = []
       @doc.xpath('//*').each do |node|
-          next if ['hierarchy', 'AppiumAUT'].include?(node.name)
-          attrs = node.attributes.transform_values(&:value)
-          
-          unique_key = node.path
-          next if seen_elements[unique_key]
+        next if ['hierarchy', 'AppiumAUT'].include?(node.name)
 
-          name = suggest_name(node.name, attrs)
-          
-          locators = XPathFactory.generate_for_node(node)
-          
-         all_elements_suggestions << { 
-            name: name, 
-            locators: locators, 
-            attributes: attrs.merge(tag: node.name, path: node.path) 
-          }
-          seen_elements[unique_key] = true
+        # FORMA CORRETA DE EXTRAIR TODOS OS ATRIBUTOS
+        attrs = node.attribute_nodes.to_h { |attr| [attr.name, attr.value] }
+
+        attrs['tag'] = node.name
+        name = suggest_name(node.name, attrs)
+        locators = XPathFactory.generate_for_node(node)
+
+        all_elements_suggestions << { name: name, locators: locators, attributes: attrs.merge(path: node.path) }
       end
-      all_elements_suggestions
+      all_elements_suggestions.uniq { |s| s[:attributes][:path] }
     end
 
     private

@@ -28,8 +28,8 @@ RSpec.describe AppiumFailureHelper::Handler do
 
     allow(AppiumFailureHelper::Analyzer).to receive(:triage_error).and_return(:locator_issue)
     allow(AppiumFailureHelper::Analyzer).to receive(:extract_failure_details).and_return({})
-    allow(AppiumFailureHelper::Analyzer).to receive(:find_similar_elements).and_return([])
-    allow(AppiumFailureHelper::Analyzer).to receive(:find_de_para_match).and_return({})
+    allow(AppiumFailureHelper::Analyzer).to receive(:perform_advanced_analysis).and_return([])
+    allow(AppiumFailureHelper::Analyzer).to receive(:perform_advanced_analysis).and_return({})
     allow(AppiumFailureHelper::CodeSearcher).to receive(:find_similar_locators).and_return([])
     allow(AppiumFailureHelper::PageAnalyzer).to receive(:new).and_return(double(analyze: []))
     allow(AppiumFailureHelper::XPathFactory).to receive(:generate_for_node).and_return(['//xpath/alternative'])

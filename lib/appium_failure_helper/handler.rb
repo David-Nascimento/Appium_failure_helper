@@ -12,69 +12,84 @@ module AppiumFailureHelper
     end
 
     def call
-      report_data = {}
       begin
+        puts "\n--- INÍCIO DO DIAGNÓSTICO DA GEM ---"
         unless @driver && @driver.session_id
-          Utils.logger.error("Helper não executado: driver nulo ou sessão encerrada.")
-          return {}
+          puts "DEBUG: Helper não executado: driver nulo ou sessão encerrada."
+          return
         end
 
         FileUtils.mkdir_p(@output_folder)
 
-        platform_value = @driver.capabilities[:platform_name] || @driver.capabilities['platformName'] || @driver.capabilities[:platformName]
+        triage_result = Analyzer.triage_error(@exception)
+        platform_value = @driver.capabilities[:platform_name] || @driver.capabilities['platformName']
         platform = platform_value&.downcase || 'unknown'
 
-        triage_result = Analyzer.triage_error(@exception)
-        screenshot_b64 = begin
-          @driver.screenshot_as(:base64)
-        rescue
-          nil
-        end
         report_data = {
-          exception: @exception,
-          triage_result: triage_result,
-          timestamp: @timestamp,
-          platform: platform,
-          screenshot_base64: screenshot_b64
+          exception: @exception, triage_result: triage_result,
+          timestamp: @timestamp, platform: platform,
+          screenshot_base_64: @driver.screenshot_as(:base64)
         }
 
         if triage_result == :locator_issue
-          page_source = @driver.page_source rescue nil
-          doc = Nokogiri::XML(page_source) rescue nil
+          page_source = @driver.page_source
+          doc = Nokogiri::XML(page_source)
+          puts "DEBUG HANDLER: Page source recebido (Tamanho: #{page_source.length})."
 
-          failed_info = fetch_failed_element
-
-          report_data[:page_source] = page_source
-          report_data[:failed_element] = failed_info
-
-          unless failed_info.nil? || failed_info.empty?
-            page_analyzer = PageAnalyzer.new(page_source, report_data[:platform].to_s) rescue nil
-            all_page_elements = page_analyzer ? (page_analyzer.analyze || []) : []
-            similar_elements = Analyzer.find_similar_elements(failed_info, all_page_elements) || []
-            alternative_xpaths = generate_alternative_xpaths(similar_elements, doc)
-            unified_element_map = ElementRepository.load_all rescue {}
-            de_para_result = Analyzer.find_de_para_match(failed_info, unified_element_map)
-            code_search_results = CodeSearcher.find_similar_locators(failed_info) || []
-
-            report_data.merge!(
-              similar_elements: similar_elements,
-              alternative_xpaths: alternative_xpaths,
-              de_para_analysis: de_para_result,
-              code_search_results: code_search_results,
-              all_page_elements: all_page_elements
-            )
+          failed_info = Analyzer.extract_failure_details(@exception) || {}
+          if failed_info.empty?
+            failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
           end
+          puts "DEBUG HANDLER: Detalhes do elemento com falha: #{failed_info.inspect}"
 
-          ReportGenerator.new(@output_folder, report_data).generate_all
-          Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
+          if failed_info.empty?
+            report_data[:triage_result] = :unidentified_locator_issue
+            puts "DEBUG HANDLER: Seletor não pode ser identificado. Gerando relatório simples."
+          else
+            page_analyzer = PageAnalyzer.new(page_source, platform)
+            all_page_elements = page_analyzer.analyze || []
+            puts "DEBUG HANDLER: PageAnalyzer encontrou #{all_page_elements.size} elementos na tela."
+
+            best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform)
+            puts "DEBUG HANDLER: Resultado da Análise Avançada (Melhor Candidato): #{best_candidate_analysis ? best_candidate_analysis[:name] : 'Nenhum'}"
+
+            alternative_xpaths = []
+            if best_candidate_analysis
+              if best_candidate_analysis[:attributes] && (target_path = best_candidate_analysis[:attributes][:path])
+                puts "DEBUG HANDLER: Encontrado 'path' do candidato: '#{target_path}'"
+                target_node = doc.at_xpath(target_path)
+                if target_node
+                  puts "DEBUG HANDLER: Nó XML do candidato encontrado. Acionando XPathFactory..."
+                  alternative_xpaths = XPathFactory.generate_for_node(target_node)
+                  puts "DEBUG HANDLER: XPathFactory gerou #{alternative_xpaths.size} estratégias."
+                else
+                  puts "DEBUG HANDLER ERROR: Não foi possível encontrar o nó XML usando o path: '#{target_path}'"
+                end
+              else
+                puts "DEBUG HANDLER WARNING: 'Melhor candidato' foi encontrado, mas ele não continha o atributo ':path' para gerar os XPaths."
+              end
+            end
+
+            report_data.merge!({
+                                 page_source: page_source,
+                                 failed_element: failed_info,
+                                 best_candidate_analysis: best_candidate_analysis,
+                                 alternative_xpaths: alternative_xpaths,
+                                 all_page_elements: all_page_elements
+                               })
+          end
         end
 
+        ReportGenerator.new(@output_folder, report_data).generate_all
+        Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
+
       rescue => e
-        Utils.logger.error("Erro fatal na GEM de diagnóstico: #{e.message}\n#{e.backtrace.join("\n")}")
-        report_data = { exception: @exception, triage_result: :error } if report_data.nil? || report_data.empty?
-      ensure
-        return report_data
+        puts "--- ERRO FATAL NA GEM ---"
+        puts "CLASSE: #{e.class}, MENSAGEM: #{e.message}"
+        puts e.backtrace.join("\n")
+        puts "-------------------------"
       end
+      puts "--- FIM DO DIAGNÓSTICO DA GEM ---"
     end
 
     private

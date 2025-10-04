@@ -2,12 +2,10 @@ module AppiumFailureHelper
   module Analyzer
     def self.triage_error(exception)
       case exception
-      when Selenium::WebDriver::Error::NoSuchElementError, 
-           Selenium::WebDriver::Error::TimeoutError,
-           Selenium::WebDriver::Error::UnknownCommandError
-        :locator_issue
-      when Selenium::WebDriver::Error::TimeoutError, 
-           Appium::Core::Wait::TimeoutError
+      when Selenium::WebDriver::Error::NoSuchElementError,
+        Selenium::WebDriver::Error::TimeoutError,
+        Selenium::WebDriver::Error::UnknownCommandError,
+        defined?(Appium::Core::Wait::TimeoutError) ? Appium::Core::Wait::TimeoutError : nil
         :locator_issue
       when Selenium::WebDriver::Error::ElementNotInteractableError
         :visibility_issue
@@ -30,69 +28,52 @@ module AppiumFailureHelper
     def self.extract_failure_details(exception)
       message = exception.message.to_s
       info = {}
-      patterns = [
-        /using "([^"]+)" with value "([^"]+)"/,
-        /element with locator ['"]?(#?\w+)['"]?/i,
-        /(?:could not be found|cannot find element) using (.+?)=['"]?([^'"]+)['"]?/i,
-        /no such element: Unable to locate element: {"method":"([^"]+)","selector":"([^"]+)"}/i,
-      ]
-      patterns.each do |pattern|
-        match = message.match(pattern)
-        if match
-          if match.captures.size == 2
-            info[:selector_type], info[:selector_value] = match.captures.map(&:strip)
-          else
-            info[:selector_value] = match.captures.first.strip
-            info[:selector_type] = 'logical_name'
-          end
-          return info
-        end
+      pattern = /using "([^"]+)" with value "([^"]+)"/
+      match = message.match(pattern)
+      if match
+        info[:selector_type], info[:selector_value] = match.captures
       end
       info
     end
-    
-    def self.find_de_para_match(failed_info, element_map)
-      failed_value = (failed_info || {})[:selector_value].to_s
-      return nil if failed_value.empty?
-      logical_name_key = failed_value.gsub(/^#/, '')
-      if element_map.key?(logical_name_key)
-        return { logical_name: logical_name_key, correct_locator: element_map[logical_name_key] }
-      end
-      cleaned_failed_locator = failed_value.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
-      element_map.each do |name, locator_info|
-        mapped_locator = (locator_info || {})['valor'].to_s
-        cleaned_mapped_locator = mapped_locator.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
-        distance = DidYouMean::Levenshtein.distance(cleaned_failed_locator, cleaned_mapped_locator)
-        max_len = [cleaned_failed_locator.length, cleaned_mapped_locator.length].max
-        next if max_len.zero?
-        similarity_score = 1.0 - (distance.to_f / max_len)
-        if similarity_score > 0.85
-          return { logical_name: name, correct_locator: locator_info }
+
+    def self.perform_advanced_analysis(failed_info, all_page_elements, platform)
+      return nil if failed_info.empty? || all_page_elements.empty?
+      expected_attrs = parse_locator(failed_info[:selector_type], failed_info[:selector_value], platform)
+      return nil if expected_attrs.empty?
+
+      id_key_to_check = (platform.to_s == 'ios') ? 'name' : 'resource-id'
+      candidates = all_page_elements.map do |element_on_screen|
+        score = 0
+        analysis = {}
+
+        if expected_attrs[id_key_to_check]
+          actual_id = element_on_screen[:attributes][id_key_to_check]
+          distance = DidYouMean::Levenshtein.distance(expected_attrs[id_key_to_check].to_s, actual_id.to_s)
+          max_len = [expected_attrs[id_key_to_check].to_s.length, actual_id.to_s.length].max
+          similarity = max_len.zero? ? 0 : 1.0 - (distance.to_f / max_len)
+          score += 100 * similarity
+          analysis[id_key_to_check.to_sym] = { similarity: similarity, expected: expected_attrs[id_key_to_check], actual: actual_id }
         end
-      end
-      nil
+
+        { score: score, name: element_on_screen[:name], attributes: element_on_screen[:attributes], analysis: analysis } if score > 75
+      end.compact
+
+      candidates.sort_by { |c| -c[:score] }.first
     end
 
-    def self.find_similar_elements(failed_info, all_page_suggestions)
-      failed_locator_value = (failed_info || {})[:selector_value]
-      failed_locator_type = (failed_info || {})[:selector_type]
-      return [] unless failed_locator_value && failed_locator_type
-      normalized_failed_type = failed_locator_type.to_s.downcase.include?('id') ? 'id' : failed_locator_type.to_s
-      cleaned_failed_locator = failed_locator_value.to_s.gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
-      similarities = []
-      all_page_suggestions.each do |suggestion|
-        candidate_locator = (suggestion[:locators] || []).find { |loc| loc[:strategy] == normalized_failed_type }
-        next unless candidate_locator
-        cleaned_candidate_locator = candidate_locator[:locator].gsub(/[:\-\/@=\[\]'"()]/, ' ').gsub(/\s+/, ' ').downcase.strip
-        distance = DidYouMean::Levenshtein.distance(cleaned_failed_locator, cleaned_candidate_locator)
-        max_len = [cleaned_failed_locator.length, cleaned_candidate_locator.length].max
-        next if max_len.zero?
-        similarity_score = 1.0 - (distance.to_f / max_len)
-        if similarity_score > 0.85
-          similarities << { name: suggestion[:name], locators: suggestion[:locators], score: similarity_score, attributes: suggestion[:attributes] }
-        end
+    private
+
+    def self.parse_locator(type, value, platform)
+      attrs = {}
+      if platform.to_s == 'ios'
+        attrs['name'] = value if type.to_s.include?('id')
+      else # Android
+        attrs['resource-id'] = value if type.to_s.include?('id')
       end
-      similarities.sort_by { |s| -s[:score] }.first(5)
+      if type.to_s == 'xpath'
+        value.scan(/@([\w\-]+)='([^']+)'/).each { |match| attrs[match[0]] = match[1] }
+      end
+      attrs
     end
   end
 end
