@@ -53,7 +53,7 @@ RSpec.describe AppiumFailureHelper::Handler do
     handler = described_class.new(driver, exception)
     report_data = handler.call
 
-    # expect(report_data[:failed_element]).to eq({ selector_type: 'id', selector_value: 'btn_login' })
+    expect(report_data[:failed_element]).to be_nil
   end
 
   it 'não levanta erro de undefined local variable' do
