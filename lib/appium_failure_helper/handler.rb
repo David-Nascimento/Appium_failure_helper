@@ -21,6 +21,9 @@ module AppiumFailureHelper
 
         FileUtils.mkdir_p(@output_folder)
 
+        platform_value = @driver.capabilities[:platform_name] || @driver.capabilities['platformName'] || @driver.capabilities[:platformName]
+        platform = platform_value&.downcase || 'unknown'
+
         triage_result = Analyzer.triage_error(@exception)
         screenshot_b64 = begin
           @driver.screenshot_as(:base64)
@@ -31,7 +34,7 @@ module AppiumFailureHelper
           exception: @exception,
           triage_result: triage_result,
           timestamp: @timestamp,
-          platform: (@driver.capabilities['platformName'] rescue @driver.capabilities[:platform_name]) || 'unknown',
+          platform: platform,
           screenshot_base64: screenshot_b64
         }
 
