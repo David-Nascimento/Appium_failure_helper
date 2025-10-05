@@ -38,25 +38,48 @@ module AppiumFailureHelper
 
     def self.perform_advanced_analysis(failed_info, all_page_elements, platform)
       return nil if failed_info.empty? || all_page_elements.empty?
+
       expected_attrs = parse_locator(failed_info[:selector_type], failed_info[:selector_value], platform)
       return nil if expected_attrs.empty?
 
-      id_key_to_check = (platform.to_s == 'ios') ? 'name' : 'resource-id'
-      candidates = all_page_elements.map do |element_on_screen|
+      id_key = (platform.to_s == 'ios') ? 'name' : 'resource-id'
+      candidates = []
+
+      all_page_elements.each do |element_on_screen|
         score = 0
         analysis = {}
+        screen_attrs = element_on_screen[:attributes]
 
-        if expected_attrs[id_key_to_check]
-          actual_id = element_on_screen[:attributes][id_key_to_check]
-          distance = DidYouMean::Levenshtein.distance(expected_attrs[id_key_to_check].to_s, actual_id.to_s)
-          max_len = [expected_attrs[id_key_to_check].to_s.length, actual_id.to_s.length].max
-          similarity = max_len.zero? ? 0 : 1.0 - (distance.to_f / max_len)
+        # Compara ID (pontuação máxima)
+        if expected_attrs[id_key] && screen_attrs[id_key]
+          similarity = calculate_similarity(expected_attrs[id_key], screen_attrs[id_key])
           score += 100 * similarity
-          analysis[id_key_to_check.to_sym] = { similarity: similarity, expected: expected_attrs[id_key_to_check], actual: actual_id }
+          analysis[id_key.to_sym] = { similarity: similarity, expected: expected_attrs[id_key], actual: screen_attrs[id_key] }
         end
 
-        { score: score, name: element_on_screen[:name], attributes: element_on_screen[:attributes], analysis: analysis } if score > 75
-      end.compact
+        # Compara Texto (pontuação média)
+        if expected_attrs['text'] && screen_attrs['text']
+          similarity = calculate_similarity(expected_attrs['text'], screen_attrs['text'])
+          score += 50 * similarity
+          analysis[:text] = { similarity: similarity, expected: expected_attrs['text'], actual: screen_attrs['text'] }
+        end
+
+        # Compara Content Description (pontuação alta para Android)
+        if expected_attrs['content-desc'] && screen_attrs['content-desc']
+          similarity = calculate_similarity(expected_attrs['content-desc'], screen_attrs['content-desc'])
+          score += 80 * similarity
+          analysis[:'content-desc'] = { similarity: similarity, expected: expected_attrs['content-desc'], actual: screen_attrs['content-desc'] }
+        end
+
+        if score > 50 # Limiar mínimo para ser considerado um candidato
+          candidates << {
+            score: score,
+            name: element_on_screen[:name],
+            attributes: element_on_screen[:attributes],
+            analysis: analysis
+          }
+        end
+      end
 
       candidates.sort_by { |c| -c[:score] }.first
     end
@@ -65,13 +88,18 @@ module AppiumFailureHelper
 
     def self.parse_locator(type, value, platform)
       attrs = {}
+      type = type.to_s.downcase
+
       if platform.to_s == 'ios'
-        attrs['name'] = value if type.to_s.include?('id')
+        attrs['name'] = value if type.include?('id')
       else # Android
-        attrs['resource-id'] = value if type.to_s.include?('id')
+        attrs['resource-id'] = value if type.include?('id')
       end
-      if type.to_s == 'xpath'
-        value.scan(/@([\w\-]+)='([^']+)'/).each { |match| attrs[match[0]] = match[1] }
+
+      if type == 'xpath'
+        value.scan(/@([\w\-]+)='([^']+)'/).each do |match|
+          attrs[match[0]] = match[1]
+        end
       end
       attrs
     end
