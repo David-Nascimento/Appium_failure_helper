@@ -24,7 +24,8 @@ module AppiumFailureHelper
         exception_class: @data[:exception].class.to_s,
         exception_message: @data[:exception].message,
         failed_element: @data[:failed_element],
-        best_candidate_analysis: @data[:best_candidate_analysis]
+        best_candidate_analysis: @data[:best_candidate_analysis],
+        alternative_xpaths: @data[:alternative_xpaths] || []
       }
       File.open("#{@output_folder}/failure_analysis_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(analysis_report)) }
 
