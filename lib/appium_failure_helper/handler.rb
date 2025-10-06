@@ -14,6 +14,7 @@ module AppiumFailureHelper
     def call
       begin
         unless @driver && @driver.session_id
+          Utils.logger.error("Helper não executado: driver nulo ou sessão encerrada.")
           return
         end
 
@@ -31,30 +32,39 @@ module AppiumFailureHelper
 
         if triage_result == :locator_issue
           page_source = @driver.page_source
-          doc = Nokogiri::XML(page_source)
+          failed_info = Analyzer.extract_failure_details(@exception)
 
-          failed_info = Analyzer.extract_failure_details(@exception) || {}
-          if failed_info.empty?
+          if failed_info.nil? || failed_info.empty?
             failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
           end
 
           if failed_info.empty?
             report_data[:triage_result] = :unidentified_locator_issue
           else
+            doc = Nokogiri::XML(page_source)
             page_analyzer = PageAnalyzer.new(page_source, platform)
             all_page_elements = page_analyzer.analyze || []
 
             best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform)
 
             alternative_xpaths = []
+            target_node = nil
+
             if best_candidate_analysis
-              if best_candidate_analysis[:attributes] && (target_path = best_candidate_analysis[:attributes][:path])
-                target_node = doc.at_xpath(target_path)
-                if target_node
-                  alternative_xpaths = XPathFactory.generate_for_node(target_node)
-                end
+              if best_candidate_analysis[:attributes] && (path = best_candidate_analysis[:attributes][:path])
+                target_node = doc.at_xpath(path)
+              end
+            else
+              failed_attrs = Analyzer.send(:parse_locator, failed_info[:selector_type], failed_info[:selector_value], platform)
+
+              unless failed_attrs.empty?
+                temp_doc = Nokogiri::XML::Document.new
+                target_node = Nokogiri::XML::Node.new(failed_attrs['tag'] || 'element', temp_doc)
+                failed_attrs.each { |k, v| target_node[k] = v unless k == 'tag' }
               end
             end
+
+            alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
 
             report_data.merge!({
                                  page_source: page_source,
@@ -68,13 +78,10 @@ module AppiumFailureHelper
 
         ReportGenerator.new(@output_folder, report_data).generate_all
         Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
+
       rescue => e
-        puts "--- ERRO FATAL NA GEM ---"
-        puts "CLASSE: #{e.class}, MENSAGEM: #{e.message}"
-        puts e.backtrace.join("\n")
-        puts "-------------------------"
+        Utils.logger.error("Erro fatal na GEM de diagnóstico: #{e.message}\n#{e.backtrace.join("\n")}")
       end
-      report_data
     end
 
     private

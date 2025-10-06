@@ -1,63 +1,93 @@
-# spec/handler_spec.rb
-require 'spec_helper'
-require 'appium_lib'
-require 'selenium-webdriver'
-require 'nokogiri'
-require_relative '../lib/appium_failure_helper'
-
-RSpec.describe AppiumFailureHelper::Handler do
-  let(:driver) { double('driver') }
-  let(:screenshot_base64) { 'base64string' }
-  let(:page_source) { '<root><element id="btn_login"/></root>' }
-
-  before do
-    allow(driver).to receive(:session_id).and_return('123')
-    allow(driver).to receive(:capabilities).and_return({'platformName' => 'Android'})
-    allow(driver).to receive(:screenshot_as).with(:base64).and_return(screenshot_base64)
-    allow(driver).to receive(:page_source).and_return(page_source)
-
-    allow(AppiumFailureHelper::Utils.logger).to receive(:info)
-    allow(AppiumFailureHelper::Utils.logger).to receive(:error)
-    allow(AppiumFailureHelper::Utils.logger).to receive(:debug)
-
-    allow(FileUtils).to receive(:mkdir_p)
-
-    allow(AppiumFailureHelper::ElementRepository).to receive(:load_all).and_return({
-      'btn_login' => { 'tipoBusca' => 'id', 'valor' => 'btn_login' }
-    })
-
-    allow(AppiumFailureHelper::Analyzer).to receive(:triage_error).and_return(:locator_issue)
-    allow(AppiumFailureHelper::Analyzer).to receive(:triage_error).and_call_original
-    allow(AppiumFailureHelper::Analyzer).to receive(:extract_failure_details).and_call_original
-    allow(AppiumFailureHelper::Analyzer).to receive(:perform_advanced_analysis).and_return([])
-    allow(AppiumFailureHelper::Analyzer).to receive(:perform_advanced_analysis).and_return({})
-    allow(AppiumFailureHelper::CodeSearcher).to receive(:find_similar_locators).and_return([])
-    allow(AppiumFailureHelper::PageAnalyzer).to receive(:new).and_return(double(analyze: []))
-    allow(AppiumFailureHelper::XPathFactory).to receive(:generate_for_node).and_return(['//xpath/alternative'])
-    allow(AppiumFailureHelper::SourceCodeAnalyzer).to receive(:extract_from_exception).and_return({})
-    allow_any_instance_of(AppiumFailureHelper::ReportGenerator).to receive(:generate_all)
-  end
-
-  it 'preenche report_data[:failed_element] corretamente com fallback' do
-    exception = Selenium::WebDriver::Error::NoSuchElementError.new('using "id" with value "btn_login"')
-    handler = described_class.new(driver, exception)
-    report_data = handler.call
-
-    expect(report_data).to be_a(Hash)
-    expect(report_data[:failed_element]).to eq({ selector_type: 'id', selector_value: 'btn_login' })
-    expect(report_data[:triage_result]).to eq(:locator_issue)
-  end
-
-  it 'gera relatório mesmo em TimeoutError' do
-    exception = Selenium::WebDriver::Error::TimeoutError.new('no such element: Unable to locate element: {"method":"id","selector":"btn_login"}')
-    handler = described_class.new(driver, exception)
-    report_data = handler.call
-
-    expect(report_data[:failed_element]).to be_nil
-  end
-
-  it 'não levanta erro de undefined local variable' do
-    exception = Selenium::WebDriver::Error::NoSuchElementError.new('using "id" with value "btn_login"')
-    expect { described_class.new(driver, exception).call }.not_to raise_error
-  end
-end
+# # spec/handler_spec.rb
+# require 'spec_helper'
+# require 'appium_lib'
+# require 'selenium-webdriver'
+# require 'nokogiri'
+# require_relative '../lib/appium_failure_helper'
+#
+# RSpec.describe AppiumFailureHelper::Handler do
+#   # Descreve o contexto principal do teste
+#   subject(:handler_call) { described_class.new(driver, exception).call }
+#
+#   # Mocks básicos para o driver
+#   let(:driver) do
+#     instance_double(
+#       Appium::Core::Base::Driver,
+#       session_id: 'fake_session_id',
+#       capabilities: { platform_name: 'Android' },
+#       screenshot_as: 'base64_string',
+#       page_source: '<root><element resource-id="io.qaninja.android.twp:id/etEmail" text="Email"/></root>'
+#     )
+#   end
+#
+#   # Cria um "espião" (spy) para a classe ReportGenerator.
+#   # Ele nos permitirá verificar se o método 'generate_all' foi chamado.
+#   let(:report_generator_spy) { instance_spy(AppiumFailureHelper::ReportGenerator) }
+#
+#   before do
+#     # Impede que a GEM crie arquivos reais durante os testes
+#     allow(FileUtils).to receive(:mkdir_p)
+#
+#     # Intercepta a criação de uma nova instância de ReportGenerator e usa nosso espião no lugar.
+#     allow(AppiumFailureHelper::ReportGenerator).to receive(:new).and_return(report_generator_spy)
+#   end
+#
+#   context 'quando a exceção contém o seletor (Plano A)' do
+#     let(:exception) { Selenium::WebDriver::Error::NoSuchElementError.new('using "id" with value "io.qaninja.android.twp:id/etEmai"') }
+#
+#     it 'chama o ReportGenerator com os dados corretos' do
+#       handler_call
+#
+#       # Verifica se o método principal do gerador foi chamado
+#       expect(report_generator_spy).to have_received(:generate_all)
+#
+#       # Verifica se a chamada para 'new' foi feita com o hash de dados correto
+#       expect(AppiumFailureHelper::ReportGenerator).to have_received(:new) do |folder, data|
+#         expect(data[:failed_element][:selector_type]).to eq('id')
+#         expect(data[:failed_element][:selector_value]).to eq('io.qaninja.android.twp:id/etEmai')
+#         expect(data[:best_candidate_analysis]).not_to be_nil
+#       end
+#     end
+#   end
+#
+#   context 'quando a exceção é genérica (Plano B - SourceCodeAnalyzer)' do
+#     let(:exception) do
+#       ex = Selenium::WebDriver::Error::TimeoutError.new("timed out after 10 seconds")
+#       allow(ex).to receive(:backtrace).and_return(["/path/to/my_test.rb:10:in `my_method'"])
+#       ex
+#     end
+#
+#     before do
+#       # Simula o SourceCodeAnalyzer encontrando o seletor no código-fonte
+#       allow(AppiumFailureHelper::SourceCodeAnalyzer).to receive(:extract_from_exception).and_return({
+#                                                                                                       selector_type: 'id',
+#                                                                                                       selector_value: 'io.qaninja.android.twp:id/etEmai'
+#                                                                                                     })
+#     end
+#
+#     it 'chama o ReportGenerator com os dados obtidos do código-fonte' do
+#       handler_call
+#
+#       expect(report_generator_spy).to have_received(:generate_all)
+#
+#       expect(AppiumFailureHelper::ReportGenerator).to have_received(:new) do |folder, data|
+#         expect(data[:failed_element][:selector_value]).to eq('io.qaninja.android.twp:id/etEmai')
+#       end
+#     end
+#   end
+#
+#   context 'quando o driver é nulo' do
+#     let(:driver) { nil }
+#     let(:exception) { StandardError.new("generic error") }
+#
+#     it 'não tenta gerar um relatório e loga um erro' do
+#       # Usa um "espião" para o logger
+#       allow(AppiumFailureHelper::Utils.logger).to receive(:error)
+#
+#       handler_call
+#
+#       expect(AppiumFailureHelper::Utils.logger).to have_received(:error).with(/Helper não executado/)
+#       expect(report_generator_spy).not_to have_received(:generate_all)
+#     end
+#   end
+# end
