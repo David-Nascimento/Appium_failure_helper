@@ -48,8 +48,8 @@ module AppiumFailureHelper
       parent = node.parent
       return unless parent && parent.name != 'hierarchy'
 
-      parent_attrs = parent.attribute.transform_values(&:value) || {}
-      
+      parent_attrs = parent.respond_to?(:attributes) ? parent.attributes.transform_values(&:value) : {}
+
       if (id = parent_attrs['resource-id']) && !id.empty?
         strategies << { name: "Filho de Pai com ID", strategy: 'xpath', locator: "//*[@resource-id='#{id}']//#{tag}", reliability: :alta }
       else
