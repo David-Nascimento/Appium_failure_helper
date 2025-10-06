@@ -67,7 +67,7 @@ module AppiumFailureHelper
         # Compara Content Description (pontuação alta para Android)
         if expected_attrs['content-desc'] && screen_attrs['content-desc']
           similarity = calculate_similarity(expected_attrs['content-desc'], screen_attrs['content-desc'])
-          score += 80 * similarity
+          score += 50 * similarity
           analysis[:'content-desc'] = { similarity: similarity, expected: expected_attrs['content-desc'], actual: screen_attrs['content-desc'] }
         end
 
@@ -85,6 +85,12 @@ module AppiumFailureHelper
     end
 
     private
+    def self.calculate_similarity(expected, actual)
+      return 0 if expected.nil? || actual.nil?
+      distance = DidYouMean::Levenshtein.distance(expected.to_s, actual.to_s)
+      max_len = [expected.to_s.length, actual.to_s.length].max
+      max_len.zero? ? 1.0 : 1.0 - (distance.to_f / max_len)
+    end
 
     def self.parse_locator(type, value, platform)
       attrs = {}
