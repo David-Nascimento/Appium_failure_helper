@@ -38,15 +38,32 @@ module AppiumFailureHelper
 
     def self.add_direct_attribute_strategies(strategies, tag, attrs)
       if (id = attrs['resource-id']) && !id.empty?
-        strategies << { name: "ID Único (Recomendado)", strategy: 'id', locator: id, reliability: :alta }
+        strategies << { name: "Localizar por resource-id (Recomendado)", strategy: 'xpath', locator: "//*[@resource-id='#{id}']", reliability: :alta }
       end
+
+      # iOS specific attributes
+      ios_attrs = %w[name label value]
+      ios_attrs.each do |attr|
+        next unless attrs[attr] && !attrs[attr].empty?
+        strategies << { name: "Atributo iOS: #{attr}", strategy: 'xpath', locator: "//#{tag}[@#{attr}=\"#{attrs[attr]}\"]", reliability: :alta }
+        strategies << { name: "Atributo iOS contém #{attr}", strategy: 'xpath', locator: "//#{tag}[contains(@#{attr}, \"#{attrs[attr].split.first}\")]", reliability: :media }
+        strategies << { name: "Texto com Inicial (iOS)", strategy: :xpath, locator: "//#{tag}[starts-with(@label, \"#{attrs[attr]}\" ) or starts-with(@name, \"#{attrs[attr]}\")]", reliability: :alta }
+        strategies << { name: "Texto com Final (iOS)", strategy: :xpath, locator: "//#{tag}[substring(@label, string-length(@label) - string-length(\"#{attrs[attr]}\") + 1) = \"#{attrs[attr]}\" or substring(@name, string-length(@name) - string-length(\"#{attrs[attr]}\") + 1) = \"#{attrs[attr]}\"]", reliability: :media }
+      end
+
+      # Android specific attributes
       if (text = attrs['text']) && !text.empty?
-        strategies << { name: "Texto Exato", strategy: 'xpath', locator: "//#{tag}[@text='#{text}']", reliability: :alta }
+        strategies << { name: "Texto Exato (Android)", strategy: 'xpath', locator: "//#{tag}[@text=\"#{text}\"]", reliability: :alta }
+        strategies << { name: "Texto com Inicial (Android)", strategy: 'xpath', locator: "//#{tag}[starts-with(@text, \"#{text}\")]", reliability: :alta }
+        strategies << { name: "Texto com Final (Android)", strategy: :xpath, locator: "//#{tag}[substring(@text, string-length(@text) - string-length(\"#{text}\") + 1) = \"#{text}\"]", reliability: :media }
+        strategies << { name: "Texto Parcial (Android)", strategy: 'xpath', locator: "//#{tag}[contains(@text, \"#{text.split.first}\")]", reliability: :media }
       end
+
       if (desc = attrs['content-desc']) && !desc.empty?
-        strategies << { name: "Content Description", strategy: 'xpath', locator: "//#{tag}[@content-desc='#{desc}']", reliability: :alta }
+        strategies << { name: "content-desc (Acessibilidade Android)", strategy: 'xpath', locator: "//#{tag}[@content-desc=\"#{desc}\"]", reliability: :alta }
       end
     end
+
 
     def self.add_combinatorial_strategies(strategies, tag, attrs)
       valid_attrs = attrs.select { |k, v| %w[text content-desc class package].include?(k) && v && !v.empty? }
