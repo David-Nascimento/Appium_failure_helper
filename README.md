@@ -9,7 +9,7 @@ Uma GEM de diagnóstico para testes Appium em Ruby, projetada para transformar f
 
 ---
 
-## ✨ Principais Funcionalidades
+## Principais Funcionalidades
 
 - **Diagnóstico Inteligente de Falhas:** Identifica automaticamente o tipo de erro (`NoSuchElementError`, `TimeoutError`, falha de asserção ou erro de código Ruby) e gera relatórios personalizados para cada caso.  
 - **Análise de Código-Fonte:** Para erros "silenciosos", inspeciona o `stack trace` e extrai o seletor diretamente do código, apontando arquivo e linha exatos.  
@@ -22,7 +22,7 @@ Uma GEM de diagnóstico para testes Appium em Ruby, projetada para transformar f
 
 ---
 
-## 🚀 Instalação
+## Instalação
 
 Adicione ao `Gemfile` do seu projeto de automação:
 
@@ -38,9 +38,9 @@ bundle install
 
 ---
 
-## 🛠️ Uso e Configuração
+## Uso e Configuração
 
-### 1️⃣ Configuração Inicial (Opcional)
+### Configuração Inicial (Opcional)
 
 No arquivo de inicialização (`features/support/env.rb`), configure os caminhos de elementos se necessário:
 
@@ -55,7 +55,7 @@ end
 
 ---
 
-### 2️⃣ Enriquecer Exceções (Altamente Recomendado)
+### Enriquecer Exceções (Altamente Recomendado)
 
 Para extrair o máximo de informações de falhas, ajuste seus métodos de busca de elementos:
 
@@ -90,7 +90,7 @@ end
 
 ---
 
-### 3️⃣ Integração com Cucumber
+### Integração com Cucumber
 
 No `hooks.rb`, acione a GEM após cada cenário com falha:
 
@@ -104,7 +104,7 @@ end
 
 ---
 
-## 📄 Relatório Gerado
+## Relatório Gerado
 
 A cada falha, a GEM cria uma pasta em `reports_failure/` com:
 
@@ -117,7 +117,7 @@ A cada falha, a GEM cria uma pasta em `reports_failure/` com:
 
 ---
 
-## 🏛️ Arquitetura
+## Arquitetura
 
 - **Handler:** Captura falhas e aciona o fluxo de análise.  
 - **SourceCodeAnalyzer:** Extrai seletores diretamente do código-fonte.  
@@ -127,7 +127,7 @@ A cada falha, a GEM cria uma pasta em `reports_failure/` com:
 
 ---
 
-## 🔄 Fluxo Interno da GEM
+## Fluxo Interno da GEM
 
 ```
 Falha Appium

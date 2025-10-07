@@ -13,13 +13,12 @@ RSpec.describe AppiumFailureHelper::Handler do
     instance_double(
       Appium::Core::Base::Driver,
       session_id: 'fake_session_id',
-      capabilities: { platform_name: 'Android' },
-      page_source: '<root><element resource-id="io.qaninja.android.twp:id/etEmail" text="Email"/></root>'
-    ).tap do |driver|
-      allow(driver).to receive(:screenshot_as).with(:base64).and_return('base64_string')
+      page_source: '<root><element resource-id="io.qaninja.android.twp:id/etEmail" text="Email"/></root>',
+      capabilities: { platformName: 'Android', platform_name: 'Android' } # adicione as duas chaves
+    ).tap do |d|
+      allow(d).to receive(:screenshot_as).with(:base64).and_return('base64_string')
     end
   end
-
   # Cria um "espião" (spy) para a classe ReportGenerator.
   # Ele nos permitirá verificar se o método 'generate_all' foi chamado.
   let(:report_generator_spy) { instance_spy(AppiumFailureHelper::ReportGenerator) }

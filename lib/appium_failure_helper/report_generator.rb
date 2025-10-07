@@ -92,7 +92,11 @@ module AppiumFailureHelper
 
                                  suggestion_text = "O `resource-id` pode ter mudado ou o `text` está diferente. Considere usar um seletor mais robusto baseado nos atributos que corresponderam."
                                  if (best_candidate[:analysis][:id] || {})[:match] == true && (best_candidate[:analysis][:text] || {})[:similarity].to_f < 0.7
-                                   suggestion_text = "O `resource-id` corresponde, mas o texto é diferente. **Recomendamos fortemente usar o `resource-id` para este seletor.**"
+                                   suggestion_text =  "Prefira usar atributos estáveis, como resource-id ou content-desc.",
+                                     "Evite caminhos absolutos (//hierarchy/...); prefira XPaths curtos e relativos.",
+                                     "Use normalize-space() para lidar com espaços e maiúsculas/minúsculas.",
+                                     "Combine atributos, ex: //*[@resource-id='id' and @text='Texto'].",
+                                     "Evite localizar por texto dinâmico, prefira IDs únicos."
                                  end
 
                                  <<~HTML
@@ -298,7 +302,7 @@ module AppiumFailureHelper
               </div>
               <div class="md:col-span-2 space-y-6">
                 <div class="bg-white p-6 rounded-lg shadow-md">
-                  <h2 class="text-xl font-bold text-red-600 mb-4">Diagnóstico: #{title}</h2>
+                  <h2 class="text-xl font-bold text-red-600 mb-4">#{title}</h2>
                   <div class="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 rounded-r-lg">
                     <p class="font-semibold">Causa Provável:</p>
                     <p>#{message}</p>
