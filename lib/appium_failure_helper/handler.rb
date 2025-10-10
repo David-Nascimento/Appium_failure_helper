@@ -34,31 +34,13 @@ module AppiumFailureHelper
 
         if triage_result == :locator_issue
           page_source = safe_page_source
-          # tenta extrair detalhes do Analyzer (se existir), senão usa fetch_failed_element
-          failed_info = {}
-          begin
-            failed_info = Analyzer.extract_failure_details(@exception) if Analyzer.respond_to?(:extract_failure_details)
-          rescue
-            failed_info = {}
+          failed_info = fetch_failed_element || {}
+
+          if failed_info.empty? && SourceCodeAnalyzer.respond_to?(:extract_from_exception)
+            failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
           end
 
-          if failed_info.nil? || failed_info.empty?
-            # tenta extrair do próprio handler (regex mais robusta)
-            failed_info = fetch_failed_element || {}
-          end
-
-          # fallback para extrair do código-fonte (se existir)
-          if (failed_info.nil? || failed_info.empty?) && SourceCodeAnalyzer.respond_to?(:extract_from_exception)
-            begin
-              failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
-            rescue
-              failed_info = {}
-            end
-          end
-
-          # garante que exista ao menos um objeto failed_element
-          if failed_info.nil? || failed_info.empty?
-            failed_info = { selector_type: 'unknown', selector_value: @exception&.message.to_s }
+          if failed_info.empty?
             report_data[:triage_result] = :unidentified_locator_issue
           end
 
@@ -66,51 +48,31 @@ module AppiumFailureHelper
           best_candidate_analysis = nil
           alternative_xpaths = []
 
-          if page_source
-            begin
-              doc = Nokogiri::XML(page_source)
-              page_analyzer = PageAnalyzer.new(page_source, platform)
-              all_page_elements = page_analyzer.analyze || []
-              best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
-            rescue => e
-              Utils.logger.warn("Erro analisando page_source: #{e.message}")
-            end
-          end
+          if page_source && !failed_info.empty?
+            doc = Nokogiri::XML(page_source)
+            page_analyzer = PageAnalyzer.new(page_source, platform)
+            all_page_elements = page_analyzer.analyze || []
+            best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
 
-          # se não encontrou candidato, gera alternativas a partir do locator bruto
-          if best_candidate_analysis.nil?
-            # tenta parse por Analyzer (se exposto), senão regex fallback
-            failed_attrs = {}
-            begin
-              if Analyzer.respond_to?(:parse_locator) || Analyzer.private_methods.include?(:parse_locator)
-                failed_attrs = Analyzer.send(:parse_locator, failed_info[:selector_type], failed_info[:selector_value], platform) rescue {}
-              end
-            rescue
-              failed_attrs = {}
-            end
-
-            if failed_attrs.nil? || failed_attrs.empty?
+            # --- SUA REGRA DE NEGÓCIO INTEGRADA AQUI ---
+            target_node = nil
+            if best_candidate_analysis && best_candidate_analysis[:attributes] && (path = best_candidate_analysis[:attributes][:path])
+              # Se encontrou um candidato, ele é o alvo para a XPathFactory
+              target_node = doc.at_xpath(path)
+            else
+              # Se NÃO encontrou, o alvo é o próprio elemento que falhou
               failed_attrs = parse_attrs_from_locator_string(failed_info[:selector_value] || '')
-            end
-
-            if failed_attrs && !failed_attrs.empty?
-              temp_doc = Nokogiri::XML::Document.new
-              tag = (failed_attrs.delete('tag') || failed_attrs.delete(:tag) || 'element').to_s
-              target_node = Nokogiri::XML::Node.new(tag, temp_doc)
-              failed_attrs.each { |k, v| target_node[k.to_s] = v.to_s unless k.to_s == 'tag' }
-              alternative_xpaths = XPathFactory.generate_for_node(target_node) || []
-            end
-          else
-            # se encontrou candidato, tenta gerar alternativas a partir do node encontrado
-            if best_candidate_analysis[:attributes] && (path = best_candidate_analysis[:attributes][:path])
-              begin
-                doc = Nokogiri::XML(page_source) unless defined?(doc) && doc
-                target_node = doc.at_xpath(path) rescue nil
-                alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
-              rescue
-                # ignore, já temos best_candidate_analysis
+              if !failed_attrs.empty?
+                temp_doc = Nokogiri::XML::Document.new
+                tag = (failed_attrs.delete('tag') || 'element').to_s
+                target_node = Nokogiri::XML::Node.new(tag, temp_doc)
+                failed_attrs.each { |k, v| target_node[k.to_s] = v.to_s }
               end
             end
+
+            # Gera as estratégias para o nó alvo, seja ele real ou "fantasma"
+            alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
+            # -----------------------------------------------
           end
 
           report_data.merge!({
