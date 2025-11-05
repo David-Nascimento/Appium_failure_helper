@@ -1,0 +1,57 @@
+pipeline {
+    agent any
+
+    environment {
+        // PATH = "/usr/local/bin:$PATH"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/seu-usuario/seu-projeto-de-automacao.git', branch: 'main'
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                sh 'bundle install'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    ansiColor('xterm') {
+                        sh 'bundle exec cucumber --tags "@regressao" -f AllureCucumber::Formatter -o logs'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            allure(
+                includeProperties: false,
+                results: [[path: 'logs']]
+            )
+
+            archiveArtifacts artifacts: 'reports_failure/**/*', allowEmptyArchive: true
+        }
+
+        failure {
+            echo "Build falhou. Publicando relatório de diagnóstico da GEM..."
+            
+            publishHTML(
+                target: [
+                    allowMissing: true,
+                    directory: 'ci_failure_report',
+                    files: 'index.html',
+                    keepAll: true,
+                    reportDir: 'DiagnosticoDeFalha',
+                    reportName: 'Diagnóstico de Falha'
+                ]
+            )
+        }
+    }
+}

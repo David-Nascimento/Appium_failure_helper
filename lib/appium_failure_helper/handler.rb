@@ -84,7 +84,9 @@ module AppiumFailureHelper
                              })
         end
 
-        ReportGenerator.new(@output_folder, report_data).generate_all
+        report_generator = ReportGenerator.new(@output_folder, report_data)
+        generated_html_path = report_generator.generate_all
+        copy_report_for_ci(generated_html_path)
         Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
 
       rescue => e
@@ -161,6 +163,20 @@ module AppiumFailureHelper
       end
 
       attrs
+    end
+
+    def copy_report_for_ci(source_html_path)
+      return unless source_html_path && File.exist?(source_html_path)
+
+      ci_report_dir = File.join(Dir.pwd, 'ci_failure_report')
+      FileUtils.mkdir_p(ci_report_dir)
+      
+      destination_path = File.join(ci_report_dir, 'index.html')
+      
+      FileUtils.cp(source_html_path, destination_path)
+      Utils.logger.info("Relatório copiado para CI em: #{destination_path}")
+    rescue => e
+      Utils.logger.warn("AVISO: Falha ao copiar relatório para CI. Erro: #{e.message}")
     end
   end
 end

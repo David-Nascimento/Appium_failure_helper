@@ -43,7 +43,10 @@ module AppiumFailureHelper
                          message: "A análise profunda do seletor não foi executada ou falhou. Verifique a mensagem de erro original e o stack trace."
                        )
                      end
-      File.write("#{@output_folder}/report_#{@data[:timestamp]}.html", html_content)
+      html_file_path = File.join(@output_folder, "report_#{@data[:timestamp]}.html")
+      File.write(html_file_path, html_content)
+      
+      return html_file_path
     end
 
     def build_full_report
