@@ -1,5 +1,5 @@
 require 'spec_helper'
-require 'appium_lib'
+require 'appium_lib_core'
 require 'selenium-webdriver'
 require 'nokogiri'
 require_relative '../lib/appium_failure_helper'

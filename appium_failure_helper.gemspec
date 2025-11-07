@@ -29,7 +29,7 @@ Gem::Specification.new do |spec|
 
   # Adicione as dependências de tempo de execução necessárias
   spec.add_runtime_dependency "nokogiri", "~> 1.15"
-  spec.add_runtime_dependency "appium_lib", "~> 10.0"
+  spec.add_dependency "appium_lib_core", ">= 0.1"
 
   # Dependências de desenvolvimento para testar e construir a gem
   spec.add_development_dependency "bundler", "~> 2.0"
