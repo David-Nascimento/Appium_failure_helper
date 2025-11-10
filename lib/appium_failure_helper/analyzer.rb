@@ -2,10 +2,11 @@ module AppiumFailureHelper
   module Analyzer
     def self.triage_error(exception)
       case exception
-      when Selenium::WebDriver::Error::NoSuchElementError,
-        Selenium::WebDriver::Error::TimeoutError,
-        Selenium::WebDriver::Error::UnknownCommandError,
-        defined?(Appium::Core::Wait::TimeoutError) ? Appium::Core::Wait::TimeoutError : nil
+      when *[
+              Selenium::WebDriver::Error::NoSuchElementError,
+              Selenium::WebDriver::Error::TimeoutError,
+              (Appium::Core::Wait::TimeoutError if defined?(Appium::Core::Wait::TimeoutError))
+            ].compact
         :locator_issue
       when Selenium::WebDriver::Error::ElementNotInteractableError
         :visibility_issue
@@ -81,7 +82,7 @@ module AppiumFailureHelper
         end
       end
 
-      candidates.sort_by { |c| -c[:score] }.first
+      candidates.sort_by { |c| -c[:score] }.first(3)
     end
 
     private

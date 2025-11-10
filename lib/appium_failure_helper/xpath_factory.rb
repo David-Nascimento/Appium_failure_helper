@@ -98,7 +98,7 @@ module AppiumFailureHelper
       strategies << {
         name: "Classe + Índice",
         strategy: 'xpath',
-        locator: "(//#{cls})[#{index.to_i + 1}]",
+        locator: "(//#{tag}[@class=#{cls.inspect}])[#{index.to_i + 1}]",
         reliability: :baixa
       }
     end

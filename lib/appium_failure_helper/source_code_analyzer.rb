@@ -59,6 +59,7 @@ module AppiumFailureHelper
     def self.extract_from_exception(exception)
       # Busca a primeira linha do backtrace que seja um arquivo .rb do projeto
       location = exception.backtrace.find { |line| line.include?('.rb') && !line.include?('gems') }
+      location ||= exception.backtrace&.first
       return {} unless location
 
       # Usa o Regex que funciona em Windows e Unix para extrair caminho e linha
