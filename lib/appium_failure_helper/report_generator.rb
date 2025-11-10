@@ -2,8 +2,8 @@ module AppiumFailureHelper
   class ReportGenerator
     def initialize(output_folder, report_data)
       @output_folder = output_folder
-      @data = report_data
-      @page_source = report_data[:page_source]
+      @data = report_data.transform_keys(&:to_sym) rescue report_data
+      @dump = @data[:dump] || @data['dump']
     end
 
     def generate_all
@@ -19,8 +19,14 @@ module AppiumFailureHelper
     end
 
     def generate_xml_report
-      File.write("#{@output_folder}/page_source_#{@data[:timestamp]}.xml", @page_source)
+      FileUtils.mkdir_p(@output_folder) unless Dir.exist?(@output_folder)
+      if @page_source && !@page_source.empty?
+        File.write("#{@output_folder}/page_source_#{@data[:timestamp]}.xml", @page_source)
+      else
+        puts "⚠️ Page source está vazio, XML não será gerado"
+      end
     end
+
 
     def generate_yaml_reports
       analysis_report = {
@@ -47,16 +53,24 @@ module AppiumFailureHelper
                          message: "A análise profunda do seletor não foi executada ou falhou. Verifique a mensagem de erro original e o stack trace."
                        )
                      end
+
       html_file_path = File.join(@output_folder, "report_#{@data[:timestamp]}.html")
       File.write(html_file_path, html_content)
-      
-      return html_file_path
+      html_file_path
     end
 
     def build_full_report
       failed_info = @data[:failed_element] || {}
       all_suggestions = @data[:all_page_elements] || []
-      best_candidate = (@data[:best_candidate_analysis]&.first) || {}
+      best_candidate = if @data[:best_candidate_analysis].is_a?(Array)
+        @data[:best_candidate_analysis].max_by do |candidate|
+          analysis = candidate[:analysis] || {}
+          total_score = analysis.values.sum { |v| v[:similarity].to_f rescue 0.0 }
+          (total_score / [analysis.size, 1].max)
+        end
+      else
+        {}
+      end
       alternative_xpaths = @data[:alternative_xpaths] || []
       timestamp = @data[:timestamp]
       platform = @data[:platform]

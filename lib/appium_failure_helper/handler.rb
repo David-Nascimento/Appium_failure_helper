@@ -32,88 +32,71 @@ module AppiumFailureHelper
           screenshot_base_64: safe_screenshot_base64
         }
 
-        if triage_result == :locator_issue
-          page_source = safe_page_source
-          failed_info = fetch_failed_element || {}
+        page_source = safe_page_source
+        failed_info = fetch_failed_element || {}
 
-          if failed_info.empty? && SourceCodeAnalyzer.respond_to?(:extract_from_exception)
-            failed_info = SourceCodeAnalyzer.extract_from_exception(@exception) || {}
-          end
-
-          if failed_info.empty?
-            report_data[:triage_result] = :unidentified_locator_issue
-          end
-
-          all_page_elements = []
-          best_candidate_analysis = nil
-          alternative_xpaths = []
-
-          if page_source && !failed_info.empty?
-            # 1) Tenta popular all_page_elements a partir de um parser existente na GEM
-            all_page_elements = []
-            begin
-              if defined?(DumpParser) && DumpParser.respond_to?(:parse)
-                all_page_elements = DumpParser.parse(page_source) || []
-              elsif defined?(Dump) && Dump.respond_to?(:from_xml)
-                all_page_elements = Dump.from_xml(page_source) || []
-              else
-                # Fallback genérico: parse com Nokogiri (resiliente, para quando não houver um parser específico)
-                require 'nokogiri' unless defined?(Nokogiri)
-                doc = Nokogiri::XML(page_source) rescue nil
-                if doc
-                  all_page_elements = doc.xpath('//*').map do |node|
-                    {
-                      name: node.name,
-                      attributes: node.attributes.transform_values(&:value).merge('tag' => node.name)
-                    }
-                  end
+        # Extrai todos os elementos da tela
+        all_page_elements = []
+        if page_source
+          begin
+            if defined?(DumpParser) && DumpParser.respond_to?(:parse)
+              all_page_elements = DumpParser.parse(page_source) || []
+            elsif defined?(Dump) && Dump.respond_to?(:from_xml)
+              all_page_elements = Dump.from_xml(page_source) || []
+            else
+              require 'nokogiri' unless defined?(Nokogiri)
+              doc = Nokogiri::XML(page_source) rescue nil
+              if doc
+                all_page_elements = doc.xpath('//*').map do |node|
+                  { name: node.name, attributes: node.attributes.transform_values(&:value).merge('tag' => node.name) }
                 end
               end
-            rescue => e
-              # Utils.logger.warn("Falha ao extrair elementos do page_source: #{e.message}")
-              all_page_elements = []
             end
-
-            # Utils.logger.info("Analyzer: failed_info=#{failed_info.inspect}, platform=#{platform}, page_source_len=#{page_source&.length}, elements_extracted=#{all_page_elements.size}")
-
-            # 2) Executa a análise avançada em busca de candidatos
-            best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
-            # Utils.logger.info("Analyzer: best_candidate_analysis=#{best_candidate_analysis.inspect}")
-
-            # 3) Decide tag_for_factory / attrs_for_factory com base no candidato ou no locator que falhou
-            tag_for_factory = nil
-            attrs_for_factory = nil
-
-            if best_candidate_analysis&.any?
-              best_candidate = best_candidate_analysis.first
-              attrs = best_candidate[:attributes] || {}
-              # Utils.logger.info("Melhor candidato utilizado: #{attrs.inspect}")
-              tag_for_factory = attrs['tag'] || best_candidate[:name]
-              attrs_for_factory = attrs
-            else
-              failed_attrs = parse_attrs_from_locator_string(failed_info[:selector_value] || '')
-              if !failed_attrs.empty?
-                tag_for_factory = failed_attrs.delete('tag')
-                attrs_for_factory = failed_attrs
-              end
-            end
-
-            alternative_xpaths = XPathFactory.generate_for_node(tag_for_factory, attrs_for_factory) if tag_for_factory && attrs_for_factory
-            # --- fim do trecho ---
+          rescue => e
+            Utils.logger.warn("Falha ao extrair elementos do page_source: #{e.message}")
+            all_page_elements = []
           end
-
-          report_data.merge!({
-                               page_source: page_source,
-                               failed_element: failed_info,
-                               best_candidate_analysis: best_candidate_analysis,
-                               alternative_xpaths: alternative_xpaths,
-                               all_page_elements: all_page_elements
-                             })
         end
 
+        # Executa análise avançada se houver failed_info
+        best_candidate_analysis = if failed_info.empty?
+                                    # Fallback: gerar análise heurística mesmo sem failed_info
+                                    all_page_elements.map do |elm|
+                                      {
+                                        score: 0,
+                                        name: elm[:name],
+                                        attributes: elm[:attributes],
+                                        analysis: {}
+                                      }
+                                    end.first(3)
+                                  else
+                                    Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
+                                  end
+
+        # Gera alternativas de XPath mesmo sem failed_info
+        tag_for_factory = nil
+        attrs_for_factory = nil
+        if best_candidate_analysis&.any?
+          first_candidate = best_candidate_analysis.first
+          attrs = first_candidate[:attributes] || {}
+          tag_for_factory = attrs['tag'] || first_candidate[:name]
+          attrs_for_factory = attrs
+        end
+        alternative_xpaths = XPathFactory.generate_for_node(tag_for_factory, attrs_for_factory) if tag_for_factory && attrs_for_factory
+
+        report_data.merge!(
+          page_source: page_source,
+          failed_element: failed_info,
+          best_candidate_analysis: best_candidate_analysis,
+          alternative_xpaths: alternative_xpaths,
+          all_page_elements: all_page_elements
+        )
+
+        # Gera relatório
         report_generator = ReportGenerator.new(@output_folder, report_data)
         generated_html_path = report_generator.generate_all
         copy_report_for_ci(generated_html_path)
+
         Utils.logger.info("Relatórios gerados com sucesso em: #{@output_folder}")
 
       rescue => e
@@ -125,31 +108,27 @@ module AppiumFailureHelper
 
     def safe_screenshot_base64
       @driver.respond_to?(:screenshot_as) ? @driver.screenshot_as(:base64) : nil
-    rescue => _
+    rescue
       nil
     end
 
     def safe_page_source
       return nil unless @driver.respond_to?(:page_source)
       @driver.page_source
-    rescue => _
+    rescue
       nil
     end
 
     def fetch_failed_element
       msg = @exception&.message.to_s
 
-      # 1) tentativa de parse clássico com aspas (mais restritivo)
       if (m = msg.match(/using\s+['"](?<type>[^'"]+)['"]\s+with\s+value\s+['"](?<value>.*?)['"]/m))
         return { selector_type: m[:type], selector_value: m[:value] }
       end
 
-      # 2) fallback: pega anything após 'with value' até o final da linha (remove quotes extras)
       if (m = msg.match(/with\s+value\s+(?<value>.+)$/mi))
         raw = m[:value].strip
-        # remove quotes de borda apenas se existirem
         raw = raw[1..-2] if raw.start_with?('"', "'") && raw.end_with?('"', "'")
-        # tenta detectar o tipo (xpath, id, accessibility id, css)
         guessed_type = if raw =~ %r{^//|^/}i
                          'xpath'
                        elsif raw =~ /^[a-zA-Z0-9\-_:.]+:/
@@ -160,36 +139,17 @@ module AppiumFailureHelper
         return { selector_type: guessed_type, selector_value: raw }
       end
 
-      # 3) outros formatos JSON-like
       if (m = msg.match(/"method"\s*:\s*"([^"]+)"[\s,}].*"selector"\s*:\s*"([^"]+)"/i))
         return { selector_type: m[1], selector_value: m[2] }
       end
 
-      # 4) tentativa simples: pegar primeira ocorrência entre aspas
       if (m = msg.match(/["']([^"']+)["']/))
         maybe_value = m[1]
-        guessed_type = msg[/\b(xpath|id|accessibility id|css)\b/i] ? $&.downcase : nil
+        guessed_type = msg[/\b(xpath|id|accessibility id|css)\b/i] ? $&.downcase : 'unknown'
         return { selector_type: guessed_type || 'unknown', selector_value: maybe_value }
       end
 
       {}
-    end
-
-    def parse_attrs_from_locator_string(selector_value)
-      attrs = {}
-      return attrs unless selector_value.is_a?(String) && !selector_value.empty?
-
-      selector_value.scan(/@([a-zA-Z0-9\-\:]+)\s*=\s*['"]([^'"]+)['"]/).each do |k, v|
-        attrs[k] = v
-      end
-
-      if selector_value =~ %r{//\s*([a-zA-Z0-9_\-:]+)}
-        attrs['tag'] = $1
-      elsif selector_value =~ /^([a-zA-Z0-9_\-:]+)\[/
-        attrs['tag'] = $1
-      end
-
-      attrs
     end
 
     def copy_report_for_ci(source_html_path)
@@ -197,9 +157,8 @@ module AppiumFailureHelper
 
       ci_report_dir = File.join(Dir.pwd, 'ci_failure_report')
       FileUtils.mkdir_p(ci_report_dir)
-      
+
       destination_path = File.join(ci_report_dir, 'index.html')
-      
       FileUtils.cp(source_html_path, destination_path)
       Utils.logger.info("Relatório copiado para CI em: #{destination_path}")
     rescue => e
