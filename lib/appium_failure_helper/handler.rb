@@ -49,15 +49,48 @@ module AppiumFailureHelper
           alternative_xpaths = []
 
           if page_source && !failed_info.empty?
+            # 1) Tenta popular all_page_elements a partir de um parser existente na GEM
+            all_page_elements = []
+            begin
+              if defined?(DumpParser) && DumpParser.respond_to?(:parse)
+                all_page_elements = DumpParser.parse(page_source) || []
+              elsif defined?(Dump) && Dump.respond_to?(:from_xml)
+                all_page_elements = Dump.from_xml(page_source) || []
+              else
+                # Fallback genérico: parse com Nokogiri (resiliente, para quando não houver um parser específico)
+                require 'nokogiri' unless defined?(Nokogiri)
+                doc = Nokogiri::XML(page_source) rescue nil
+                if doc
+                  all_page_elements = doc.xpath('//*').map do |node|
+                    {
+                      name: node.name,
+                      attributes: node.attributes.transform_values(&:value).merge('tag' => node.name)
+                    }
+                  end
+                end
+              end
+            rescue => e
+              Utils.logger.warn("Falha ao extrair elementos do page_source: #{e.message}")
+              all_page_elements = []
+            end
+
+            Utils.logger.info("Analyzer: failed_info=#{failed_info.inspect}, platform=#{platform}, page_source_len=#{page_source&.length}, elements_extracted=#{all_page_elements.size}")
+
+            # 2) Executa a análise avançada em busca de candidatos
+            best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
+            Utils.logger.info("Analyzer: best_candidate_analysis=#{best_candidate_analysis.inspect}")
+
+            # 3) Decide tag_for_factory / attrs_for_factory com base no candidato ou no locator que falhou
             tag_for_factory = nil
             attrs_for_factory = nil
 
-            if best_candidate_analysis && (attrs = best_candidate_analysis[:attributes])
-              # Se encontrou um candidato, usa os atributos dele
-              tag_for_factory = attrs['tag']
+            if best_candidate_analysis&.any?
+              best_candidate = best_candidate_analysis.first
+              attrs = best_candidate[:attributes] || {}
+              Utils.logger.info("Melhor candidato utilizado: #{attrs.inspect}")
+              tag_for_factory = attrs['tag'] || best_candidate[:name]
               attrs_for_factory = attrs
             else
-              # Se NÃO encontrou, usa os atributos do seletor que falhou
               failed_attrs = parse_attrs_from_locator_string(failed_info[:selector_value] || '')
               if !failed_attrs.empty?
                 tag_for_factory = failed_attrs.delete('tag')
@@ -65,9 +98,8 @@ module AppiumFailureHelper
               end
             end
 
-            # Gera as estratégias usando apenas tag e atributos
             alternative_xpaths = XPathFactory.generate_for_node(tag_for_factory, attrs_for_factory) if tag_for_factory && attrs_for_factory
-            # -----------------------------------------------
+            # --- fim do trecho ---
           end
 
           report_data.merge!({

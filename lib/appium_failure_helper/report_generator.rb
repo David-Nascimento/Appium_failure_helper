@@ -13,6 +13,10 @@ module AppiumFailureHelper
     end
 
     private
+    
+    def safe_escape_html(value)
+      CGI.escapeHTML(value.to_s)
+    end
 
     def generate_xml_report
       File.write("#{@output_folder}/page_source_#{@data[:timestamp]}.xml", @page_source)
@@ -52,59 +56,69 @@ module AppiumFailureHelper
     def build_full_report
       failed_info = @data[:failed_element] || {}
       all_suggestions = @data[:all_page_elements] || []
-      best_candidate = @data[:best_candidate_analysis]
+      best_candidate = (@data[:best_candidate_analysis]&.first) || {}
       alternative_xpaths = @data[:alternative_xpaths] || []
       timestamp = @data[:timestamp]
       platform = @data[:platform]
       screenshot_base64 = @data[:screenshot_base_64]
 
       locators_html = lambda do |locators|
-        (locators || []).map { |loc| "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{CGI.escapeHTML(loc[:strategy].to_s.upcase.gsub('_', ' '))}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{CGI.escapeHTML(loc[:locator])}</span></li>" }.join
+        (locators || []).map { |loc| "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{safe_escape_html(loc[:strategy].to_s.upcase.gsub('_', ' '))}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{safe_escape_html(loc[:locator])}</span></li>" }.join
       end
 
       all_elements_html = lambda do |elements|
-        (elements || []).map { |el| "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{CGI.escapeHTML(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html.call(el[:locators])}</ul></details>" }.join
+        (elements || []).map { |el| "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{safe_escape_html(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html.call(el[:locators])}</ul></details>" }.join
       end
 
-      failed_info_content = "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{CGI.escapeHTML(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-words'>#{CGI.escapeHTML(failed_info[:selector_value].to_s)}</span></p>"
+      failed_info_content = "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{safe_escape_html(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-words'>#{safe_escape_html(failed_info[:selector_value].to_s)}</span></p>"
 
       advanced_analysis_html = if best_candidate.nil?
                                  "<p class='text-gray-500'>Nenhum candidato provável foi encontrado na tela atual para uma análise detalhada.</p>"
                                else
-                                 analysis_details = (best_candidate[:analysis] || {}).map do |key, data|
-                                   status_color = 'bg-gray-400'
-                                   status_icon = '⚪'
-                                   status_text = "<b>#{key.capitalize}:</b><span class='ml-2 text-gray-700'>Não verificado</span>"
+                                  analysis_details = (best_candidate[:analysis] || {}).map do |key, data|
+                                    data ||= {}  # garante que não seja nil
+                                    status_color = 'bg-gray-400'
+                                    status_icon = '⚪'
+                                    
+                                    expected = data[:expected].to_s
+                                    actual = data[:actual].to_s
+                                    similarity = data[:similarity].to_f
+                                    match = data[:match]
 
-                                   if data[:match] == true || (data[:similarity] && data[:similarity] == 1.0)
-                                     status_color = 'bg-green-500'
-                                     status_icon = '✅'
-                                     status_text = "<b>#{key.capitalize}:</b><span class='ml-2 text-gray-700'>Correspondência Exata!</span>"
-                                   elsif data[:similarity] && data[:similarity] > 0.7
-                                     status_color = 'bg-yellow-500'
-                                     status_icon = '⚠️'
-                                     status_text = "<b>#{key.capitalize}:</b><span class='ml-2 text-gray-700'>Parecido (Encontrado: '#{CGI.escapeHTML(data[:actual])}')</span>"
-                                   else
-                                     status_color = 'bg-red-500'
-                                     status_icon = '❌'
-                                     status_text = "<b>#{key.capitalize}:</b><span class='ml-2 text-gray-700'>Diferente! Esperado: '#{CGI.escapeHTML(data[:expected].to_s)}'</span>"
-                                   end
+                                    if match == true || similarity == 1.0
+                                      status_color = 'bg-green-500'
+                                      status_icon = '✅'
+                                      status_text = "<b>#{key.capitalize}:</b> Correspondência Exata!"
+                                    elsif similarity > 0.7
+                                      status_color = 'bg-yellow-500'
+                                      status_icon = '⚠️'
+                                      status_text = "<b>#{key.capitalize}:</b> Parecido (Encontrado: '#{CGI.escapeHTML(actual)}')"
+                                    else
+                                      status_color = 'bg-red-500'
+                                      status_icon = '❌'
+                                      status_text = "<b>#{key.capitalize}:</b> Diferente! Esperado: '#{CGI.escapeHTML(expected)}'"
+                                    end
 
-                                   "<li class='flex items-center text-sm'><span class='w-4 h-4 rounded-full #{status_color} mr-3 flex-shrink-0 flex items-center justify-center text-white text-xs'>#{status_icon}</span><div class='truncate'>#{status_text}</div></li>"
-                                 end.join
+                                    "<li class='flex items-center text-sm'><span class='w-4 h-4 rounded-full #{status_color} mr-3 flex-shrink-0 flex items-center justify-center text-white text-xs'>#{status_icon}</span><div class='truncate'>#{status_text}</div></li>"
+                                  end.join
+                                
+                                  resource_analysis = best_candidate.dig(:analysis, :"resource-id") || {}
+                                  match = resource_analysis[:match]
+                                  similarity = resource_analysis[:similarity].to_f
 
-                                 suggestion_text = "O `resource-id` pode ter mudado ou o `text` está diferente. Considere usar um seletor mais robusto baseado nos atributos que corresponderam."
-                                 if (best_candidate[:analysis][:id] || {})[:match] == true && (best_candidate[:analysis][:text] || {})[:similarity].to_f < 0.7
-                                   suggestion_text =  "Prefira usar atributos estáveis, como resource-id ou content-desc.",
-                                     "Evite caminhos absolutos (//hierarchy/...); prefira XPaths curtos e relativos.",
-                                     "Use normalize-space() para lidar com espaços e maiúsculas/minúsculas.",
-                                     "Combine atributos, ex: //*[@resource-id='id' and @text='Texto'].",
-                                     "Evite localizar por texto dinâmico, prefira IDs únicos."
-                                 end
+                                  suggestion_text = if match == true && similarity < 0.7
+                                                      "Prefira usar atributos estáveis, como resource-id ou content-desc."\
+                                                      "Evite caminhos absolutos (//hierarchy/...); prefira XPaths curtos e relativos."\
+                                                      "Use normalize-space() para lidar com espaços e maiúsculas/minúsculas."\
+                                                      "Combine atributos, ex: //*[@resource-id='id' and @text='Texto']."\
+                                                      "Evite localizar por texto dinâmico, prefira IDs únicos."
+                                                    else
+                                                      "O `resource-id` pode ter mudado ou o `text` está diferente. Considere usar um seletor mais robusto baseado nos atributos que corresponderam."
+                                                    end
 
                                  <<~HTML
                                   <div class='border border-sky-200 bg-sky-50 p-4 rounded-lg'>
-                                    <h4 class='font-bold text-sky-800 mb-3'>Candidato Mais Provável Encontrado: <span class='font-mono bg-sky-100 text-sky-900 rounded px-2 py-1 text-sm'>#{CGI.escapeHTML(best_candidate[:name])}</span></h4>
+                                    <h4 class='font-bold text-sky-800 mb-3'>Candidato Mais Provável Encontrado: <span class='font-mono bg-sky-100 text-sky-900 rounded px-2 py-1 text-sm'>#{safe_escape_html(best_candidate[:name])}</span></h4>
                                     <ul class='space-y-2 mb-4'>#{analysis_details}</ul>
                                     <div class='bg-sky-100 border-l-4 border-sky-500 text-sky-900 text-sm p-3 rounded-r-lg'>
                                       <p><b>Sugestão:</b> #{suggestion_text}</p>
@@ -128,12 +142,12 @@ module AppiumFailureHelper
                                          <<~STRATEGY_ITEM
               <li class='border-b border-gray-200 py-3 last:border-b-0'>
                 <div class='flex justify-between items-center mb-1'>
-                  <p class='font-semibold text-indigo-800 text-sm'>#{CGI.escapeHTML(strategy[:name])}</p>
-                  <span class='text-xs font-medium px-2 py-0.5 rounded-full #{reliability_color}'>#{CGI.escapeHTML(strategy[:reliability].to_s.capitalize)}</span>
+                  <p class='font-semibold text-indigo-800 text-sm'>#{safe_escape_html(strategy[:name])}</p>
+                  <span class='text-xs font-medium px-2 py-0.5 rounded-full #{reliability_color}'>#{safe_escape_html(strategy[:reliability].to_s.capitalize)}</span>
                 </div>
                 <div class='bg-gray-800 text-white p-2 rounded mt-1 text-xs whitespace-pre-wrap break-words font-mono'>
-                  <span class='font-bold text-indigo-400'>#{CGI.escapeHTML(strategy[:strategy].to_s.upcase)}:</span>
-                  <code class='ml-1'>#{CGI.escapeHTML(strategy[:locator])}</code>
+                  <span class='font-bold text-indigo-400'>#{safe_escape_html(strategy[:strategy].to_s.upcase)}:</span>
+                  <code class='ml-1'>#{safe_escape_html(strategy[:locator])}</code>
                 </div>
               </li>
             STRATEGY_ITEM
@@ -279,8 +293,8 @@ module AppiumFailureHelper
     def build_simple_diagnosis_report(title:, message:)
       exception = @data[:exception]
       screenshot = @data[:screenshot_base_64]
-      error_message_html = CGI.escapeHTML(exception.message.to_s)
-      backtrace_html = CGI.escapeHTML(exception.backtrace.join("\n"))
+      error_message_html = safe_escape_html(exception.message.to_s)
+      backtrace_html = safe_escape_html(exception.backtrace.join("\n"))
 
       <<~HTML_REPORT
         <!DOCTYPE html>
