@@ -70,15 +70,15 @@ module AppiumFailureHelper
                 end
               end
             rescue => e
-              Utils.logger.warn("Falha ao extrair elementos do page_source: #{e.message}")
+              # Utils.logger.warn("Falha ao extrair elementos do page_source: #{e.message}")
               all_page_elements = []
             end
 
-            Utils.logger.info("Analyzer: failed_info=#{failed_info.inspect}, platform=#{platform}, page_source_len=#{page_source&.length}, elements_extracted=#{all_page_elements.size}")
+            # Utils.logger.info("Analyzer: failed_info=#{failed_info.inspect}, platform=#{platform}, page_source_len=#{page_source&.length}, elements_extracted=#{all_page_elements.size}")
 
             # 2) Executa a análise avançada em busca de candidatos
             best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
-            Utils.logger.info("Analyzer: best_candidate_analysis=#{best_candidate_analysis.inspect}")
+            # Utils.logger.info("Analyzer: best_candidate_analysis=#{best_candidate_analysis.inspect}")
 
             # 3) Decide tag_for_factory / attrs_for_factory com base no candidato ou no locator que falhou
             tag_for_factory = nil
@@ -87,7 +87,7 @@ module AppiumFailureHelper
             if best_candidate_analysis&.any?
               best_candidate = best_candidate_analysis.first
               attrs = best_candidate[:attributes] || {}
-              Utils.logger.info("Melhor candidato utilizado: #{attrs.inspect}")
+              # Utils.logger.info("Melhor candidato utilizado: #{attrs.inspect}")
               tag_for_factory = attrs['tag'] || best_candidate[:name]
               attrs_for_factory = attrs
             else
