@@ -73,24 +73,30 @@ Ajuste seus métodos de busca de elementos (ex: em `features/support/appiumCusto
 # --- MÉTODO DE ESPERA ENRIQUECIDO ---
 def waitForElementExist(el, timeout = 30)
   wait = Selenium::WebDriver::Wait.new(timeout: timeout)
+
   begin
-    wait.until { $driver.find_elements(el['tipoBusca'], el['value']).size > 0 }
+    wait.until do
+      if el.is_a?(Hash)
+        $driver.find_elements(el.keys.first, el.values.first).size > 0
+      else
+        # assume que é um ID simples (string)
+        $driver.find_elements(:id, el).size > 0
+      end
+    end
   rescue Selenium::WebDriver::Error::TimeoutError => e
-    # CRUCIAL: Relança o erro com uma mensagem explícita que a GEM entende.
-    new_message = "Timeout de #{timeout}s esperando pelo elemento: using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
-    new_exception = e.class.new(new_message)
-    new_exception.set_backtrace(e.backtrace) # Preserva o stack trace
-    raise new_exception
+    locator_info = el.is_a?(Hash) ? "#{el.keys.first}: #{el.values.first}" : "using \"#{el}\""
+    raise e.class, "Timeout de #{timeout}s esperando pelo elemento (#{locator_info})", e.backtrace
   end
 end
 
+
 # --- MÉTODO DE BUSCA ENRIQUECIDO ---
 def find(el)
-  find_element_with_enriched_error(el)
+  waitForElementExist(el)
 end
 
 def clickElement(el)
-  find_element_with_enriched_error(el).click
+  waitForElementExist(el).click
 end
 
 private
@@ -98,9 +104,9 @@ private
 # Helper central que enriquece erros de 'find_element'
 def find_element_with_enriched_error(el)
   begin
-    return $driver.find_element(el['tipoBusca'], el['value'])
+    return $driver.find_element(el)
   rescue Selenium::WebDriver::Error::NoSuchElementError => e
-    new_message = "using \"#{el['tipoBusca']}\" with value \"#{el['value']}\""
+    new_message = "using \"#{el.keys.first}\""
     new_exception = e.class.new(new_message)
     new_exception.set_backtrace(e.backtrace)
     raise new_exception
