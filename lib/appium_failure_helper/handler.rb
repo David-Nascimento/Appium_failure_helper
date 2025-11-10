@@ -49,29 +49,24 @@ module AppiumFailureHelper
           alternative_xpaths = []
 
           if page_source && !failed_info.empty?
-            doc = Nokogiri::XML(page_source)
-            page_analyzer = PageAnalyzer.new(page_source, platform)
-            all_page_elements = page_analyzer.analyze || []
-            best_candidate_analysis = Analyzer.perform_advanced_analysis(failed_info, all_page_elements, platform) rescue nil
+            tag_for_factory = nil
+            attrs_for_factory = nil
 
-            # --- SUA REGRA DE NEGÓCIO INTEGRADA AQUI ---
-            target_node = nil
-            if best_candidate_analysis && best_candidate_analysis[:attributes] && (path = best_candidate_analysis[:attributes][:path])
-              # Se encontrou um candidato, ele é o alvo para a XPathFactory
-              target_node = doc.at_xpath(path)
+            if best_candidate_analysis && (attrs = best_candidate_analysis[:attributes])
+              # Se encontrou um candidato, usa os atributos dele
+              tag_for_factory = attrs['tag']
+              attrs_for_factory = attrs
             else
-              # Se NÃO encontrou, o alvo é o próprio elemento que falhou
+              # Se NÃO encontrou, usa os atributos do seletor que falhou
               failed_attrs = parse_attrs_from_locator_string(failed_info[:selector_value] || '')
               if !failed_attrs.empty?
-                temp_doc = Nokogiri::XML::Document.new
-                tag = (failed_attrs.delete('tag') || 'element').to_s
-                target_node = Nokogiri::XML::Node.new(tag, temp_doc)
-                failed_attrs.each { |k, v| target_node[k.to_s] = v.to_s }
+                tag_for_factory = failed_attrs.delete('tag')
+                attrs_for_factory = failed_attrs
               end
             end
 
-            # Gera as estratégias para o nó alvo, seja ele real ou "fantasma"
-            alternative_xpaths = XPathFactory.generate_for_node(target_node) if target_node
+            # Gera as estratégias usando apenas tag e atributos
+            alternative_xpaths = XPathFactory.generate_for_node(tag_for_factory, attrs_for_factory) if tag_for_factory && attrs_for_factory
             # -----------------------------------------------
           end
 

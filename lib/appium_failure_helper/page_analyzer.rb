@@ -22,16 +22,25 @@ module AppiumFailureHelper
 
     def analyze
       all_elements_suggestions = []
+      
+      # O XPath '//*' funciona para ambos os XMLs (Android e iOS)
       @doc.xpath('//*').each do |node|
-        next if ['hierarchy', 'AppiumAUT'].include?(node.name)
+          next if ['hierarchy', 'AppiumAUT'].include?(node.name)
+          
+          # Forma robusta de extrair TODOS os atributos
+          attrs = node.attribute_nodes.to_h { |attr| [attr.name, attr.value] }
+          
+          # Normaliza atributos do iOS para que o Analyzer entenda
+          if @platform == 'ios'
+            attrs['text'] = attrs['label'] || attrs['value']
+            attrs['resource-id'] = attrs['name']
+          end
 
-        attrs = node.attribute_nodes.to_h { |attr| [attr.name, attr.value] }
-
-        attrs['tag'] = node.name
-        name = suggest_name(node.name, attrs)
-        locators = XPathFactory.generate_for_node(node)
-
-        all_elements_suggestions << { name: name, locators: locators, attributes: attrs.merge(path: node.path) }
+          attrs['tag'] = node.name
+          name = suggest_name(node.name, attrs)
+          locators = XPathFactory.generate_for_node(node)
+          
+          all_elements_suggestions << { name: name, locators: locators, attributes: attrs.merge(path: node.path) }
       end
       all_elements_suggestions.uniq { |s| s[:attributes][:path] }
     end
