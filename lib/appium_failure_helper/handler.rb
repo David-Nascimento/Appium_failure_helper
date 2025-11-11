@@ -34,6 +34,10 @@ module AppiumFailureHelper
 
         page_source = safe_page_source
         failed_info = fetch_failed_element || {}
+        if failed_info.empty?
+          failed_info = { selector_type: 'unknown', selector_value: 'unknown' }
+          report_data[:triage_result] = :unidentified_locator_issue
+        end
 
         # Extrai todos os elementos da tela
         all_page_elements = []
@@ -122,31 +126,22 @@ module AppiumFailureHelper
     def fetch_failed_element
       msg = @exception&.message.to_s
 
+      # Formato clássico: using "type" with value "value"
       if (m = msg.match(/using\s+['"](?<type>[^'"]+)['"]\s+with\s+value\s+['"](?<value>.*?)['"]/m))
         return { selector_type: m[:type], selector_value: m[:value] }
       end
 
-      if (m = msg.match(/with\s+value\s+(?<value>.+)$/mi))
-        raw = m[:value].strip
-        raw = raw[1..-2] if raw.start_with?('"', "'") && raw.end_with?('"', "'")
+      # Novo formato: using "locator"
+      if (m = msg.match(/using\s+["'](?<value>[^"']+)["']/))
+        raw = m[:value]
         guessed_type = if raw =~ %r{^//|^/}i
-                         'xpath'
-                       elsif raw =~ /^[a-zA-Z0-9\-_:.]+:/
-                         'id'
-                       else
-                         (msg[/\b(xpath|id|accessibility id|css)\b/i] || 'unknown').downcase
-                       end
+                        'xpath'
+                      elsif raw =~ /^[a-zA-Z0-9\-_:.]+:/
+                        'id'
+                      else
+                        'unknown'
+                      end
         return { selector_type: guessed_type, selector_value: raw }
-      end
-
-      if (m = msg.match(/"method"\s*:\s*"([^"]+)"[\s,}].*"selector"\s*:\s*"([^"]+)"/i))
-        return { selector_type: m[1], selector_value: m[2] }
-      end
-
-      if (m = msg.match(/["']([^"']+)["']/))
-        maybe_value = m[1]
-        guessed_type = msg[/\b(xpath|id|accessibility id|css)\b/i] ? $&.downcase : 'unknown'
-        return { selector_type: guessed_type || 'unknown', selector_value: maybe_value }
       end
 
       {}

@@ -67,7 +67,7 @@ RSpec.describe AppiumFailureHelper::Handler do
       expect(report_generator_spy).to have_received(:generate_all)
 
       expect(AppiumFailureHelper::ReportGenerator).to have_received(:new) do |folder, data|
-        # expect(data[:failed_element][:selector_value]).to eq('io.qaninja.android.twp:id/etEmai')
+        expect(data[:failed_element][:selector_value]).to eq('io.qaninja.android.twp:id/etEmai')
       end
     end
   end

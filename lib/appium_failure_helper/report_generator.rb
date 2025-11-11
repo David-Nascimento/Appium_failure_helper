@@ -3,238 +3,125 @@ module AppiumFailureHelper
     def initialize(output_folder, report_data)
       @output_folder = output_folder
       @data = report_data.transform_keys(&:to_sym) rescue report_data
-      @dump = @data[:dump] || @data['dump']
+
+      # Inicializações seguras para evitar nil e erros de método 'presence'
+      @dump = @data[:dump] || []
+      @all_page_elements = @data[:all_page_elements].is_a?(Array) ? @data[:all_page_elements] : []
+      @alternative_xpaths = if @data[:alternative_xpaths].is_a?(Array) && !@data[:alternative_xpaths].empty?
+                              @data[:alternative_xpaths]
+                            else
+                              []
+                            end
     end
 
     def generate_all
-      generate_xml_report if @page_source
+      generate_xml_report if @data[:page_source]
       generate_yaml_reports
       generate_html_report
     end
 
     private
-    
+
     def safe_escape_html(value)
       CGI.escapeHTML(value.to_s)
     end
 
     def generate_xml_report
       FileUtils.mkdir_p(@output_folder) unless Dir.exist?(@output_folder)
-      if @page_source && !@page_source.empty?
-        File.write("#{@output_folder}/page_source_#{@data[:timestamp]}.xml", @page_source)
+      page_source = @data[:page_source]
+      if page_source && !page_source.empty?
+        File.write("#{ @output_folder }/page_source_#{ @data[:timestamp] }.xml", page_source)
       else
         puts "⚠️ Page source está vazio, XML não será gerado"
       end
     end
 
-
     def generate_yaml_reports
       analysis_report = {
         triage_result: @data[:triage_result],
-        exception_class: @data[:exception].class.to_s,
-        exception_message: @data[:exception].message,
+        exception_class: @data[:exception]&.class.to_s,
+        exception_message: @data[:exception]&.message,
         failed_element: @data[:failed_element],
         best_candidate_analysis: @data[:best_candidate_analysis],
-        alternative_xpaths: @data[:alternative_xpaths] || []
+        alternative_xpaths: @alternative_xpaths
       }
-      File.open("#{@output_folder}/failure_analysis_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(analysis_report)) }
 
-      if @data[:all_page_elements]
-        File.open("#{@output_folder}/all_elements_dump_#{@data[:timestamp]}.yaml", 'w') { |f| f.write(YAML.dump(@data[:all_page_elements])) }
-      end
+      File.write("#{@output_folder}/failure_analysis_#{@data[:timestamp]}.yaml", YAML.dump(analysis_report))
+      File.write("#{@output_folder}/all_elements_dump_#{@data[:timestamp]}.yaml", YAML.dump(@all_page_elements)) if @all_page_elements.any?
     end
 
     def generate_html_report
-      html_content = if @data[:triage_result] == :locator_issue && !(@data[:failed_element] || {}).empty?
-                       build_full_report
-                     else
-                       build_simple_diagnosis_report(
-                         title: "Diagnóstico Rápido de Falha",
-                         message: "A análise profunda do seletor não foi executada ou falhou. Verifique a mensagem de erro original e o stack trace."
-                       )
-                     end
-
       html_file_path = File.join(@output_folder, "report_#{@data[:timestamp]}.html")
-      File.write(html_file_path, html_content)
+      File.write(html_file_path, build_full_report)
       html_file_path
     end
 
+    # === HTML ===
     def build_full_report
       failed_info = @data[:failed_element] || {}
-      all_suggestions = @data[:all_page_elements] || []
-      best_candidate = if @data[:best_candidate_analysis].is_a?(Array)
-        @data[:best_candidate_analysis].max_by do |candidate|
-          analysis = candidate[:analysis] || {}
-          total_score = analysis.values.sum { |v| v[:similarity].to_f rescue 0.0 }
-          (total_score / [analysis.size, 1].max)
-        end
-      else
-        {}
-      end
-      alternative_xpaths = @data[:alternative_xpaths] || []
+      best_candidate = select_best_candidate(@data[:best_candidate_analysis])
       timestamp = @data[:timestamp]
       platform = @data[:platform]
       screenshot_base64 = @data[:screenshot_base_64]
 
-      locators_html = lambda do |locators|
-        (locators || []).map { |loc| "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{safe_escape_html(loc[:strategy].to_s.upcase.gsub('_', ' '))}:</span><span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{safe_escape_html(loc[:locator])}</span></li>" }.join
-      end
+      advanced_analysis_html = build_advanced_analysis(best_candidate)
+      repair_strategies_content = build_repair_strategies(@alternative_xpaths)
+      all_elements_html = build_all_elements_html(@all_page_elements)
 
-      all_elements_html = lambda do |elements|
-        (elements || []).map { |el| "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{safe_escape_html(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html.call(el[:locators])}</ul></details>" }.join
-      end
+      <<~HTML
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Relatório de Falha Appium - #{timestamp}</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style> .tab-button.active { border-bottom: 2px solid #4f46e5; color: #4f46e5; font-weight: 600; } .tab-content { display: none; } .tab-content.active { display: block; } </style>
+      </head>
+      <body class="bg-gray-100 p-4 sm:p-8">
+        <div class="max-w-7xl mx-auto">
+          <header class="mb-8 pb-4 border-b border-gray-300">
+            <h1 class="text-3xl font-bold text-gray-800">Diagnóstico de Falha Automatizada</h1>
+            <p class="text-sm text-gray-500">Relatório gerado em: #{timestamp} | Plataforma: #{platform.to_s.upcase}</p>
+          </header>
 
-      failed_info_content = "<p class='text-sm text-gray-700 font-medium mb-2'>Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{safe_escape_html(failed_info[:selector_type].to_s)}</span></p><p class='text-sm text-gray-700 font-medium'>Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-words'>#{safe_escape_html(failed_info[:selector_value].to_s)}</span></p>"
-
-      advanced_analysis_html = if best_candidate.nil?
-                                 "<p class='text-gray-500'>Nenhum candidato provável foi encontrado na tela atual para uma análise detalhada.</p>"
-                               else
-                                  analysis_details = (best_candidate[:analysis] || {}).map do |key, data|
-                                    data ||= {}  # garante que não seja nil
-                                    status_color = 'bg-gray-400'
-                                    status_icon = '⚪'
-                                    
-                                    expected = data[:expected].to_s
-                                    actual = data[:actual].to_s
-                                    similarity = data[:similarity].to_f
-                                    match = data[:match]
-
-                                    if match == true || similarity == 1.0
-                                      status_color = 'bg-green-500'
-                                      status_icon = '✅'
-                                      status_text = "<b>#{key.capitalize}:</b> Correspondência Exata!"
-                                    elsif similarity > 0.7
-                                      status_color = 'bg-yellow-500'
-                                      status_icon = '⚠️'
-                                      status_text = "<b>#{key.capitalize}:</b> Parecido (Encontrado: '#{CGI.escapeHTML(actual)}')"
-                                    else
-                                      status_color = 'bg-red-500'
-                                      status_icon = '❌'
-                                      status_text = "<b>#{key.capitalize}:</b> Diferente! Esperado: '#{CGI.escapeHTML(expected)}'"
-                                    end
-
-                                    "<li class='flex items-center text-sm'><span class='w-4 h-4 rounded-full #{status_color} mr-3 flex-shrink-0 flex items-center justify-center text-white text-xs'>#{status_icon}</span><div class='truncate'>#{status_text}</div></li>"
-                                  end.join
-                                
-                                  resource_analysis = best_candidate.dig(:analysis, :"resource-id") || {}
-                                  match = resource_analysis[:match]
-                                  similarity = resource_analysis[:similarity].to_f
-
-                                  suggestion_text = if match == true && similarity < 0.7
-                                                      "Prefira usar atributos estáveis, como resource-id ou content-desc."\
-                                                      "Evite caminhos absolutos (//hierarchy/...); prefira XPaths curtos e relativos."\
-                                                      "Use normalize-space() para lidar com espaços e maiúsculas/minúsculas."\
-                                                      "Combine atributos, ex: //*[@resource-id='id' and @text='Texto']."\
-                                                      "Evite localizar por texto dinâmico, prefira IDs únicos."
-                                                    else
-                                                      "O `resource-id` pode ter mudado ou o `text` está diferente. Considere usar um seletor mais robusto baseado nos atributos que corresponderam."
-                                                    end
-
-                                 <<~HTML
-                                  <div class='border border-sky-200 bg-sky-50 p-4 rounded-lg'>
-                                    <h4 class='font-bold text-sky-800 mb-3'>Candidato Mais Provável Encontrado: <span class='font-mono bg-sky-100 text-sky-900 rounded px-2 py-1 text-sm'>#{safe_escape_html(best_candidate[:name])}</span></h4>
-                                    <ul class='space-y-2 mb-4'>#{analysis_details}</ul>
-                                    <div class='bg-sky-100 border-l-4 border-sky-500 text-sky-900 text-sm p-3 rounded-r-lg'>
-                                      <p><b>Sugestão:</b> #{suggestion_text}</p>
-                                    </div>
-                                  </div>
-                                HTML
-                               end
-
-      repair_strategies_content =  if alternative_xpaths.empty?
-                                     "<p class='text-gray-500'>Nenhuma estratégia de localização alternativa pôde ser gerada.</p>"
-                                   else
-                                     pages = alternative_xpaths.each_slice(6).to_a
-                                     carousel_items = pages.map do |page_strategies|
-                                       strategy_list_html = page_strategies.map do |strategy|
-                                         reliability_color = case strategy[:reliability]
-                                                             when :alta then 'bg-green-100 text-green-800'
-                                                             when :media then 'bg-yellow-100 text-yellow-800'
-                                                             else 'bg-red-100 text-red-800'
-                                                             end
-                                         # CORREÇÃO: Adiciona o tipo de estratégia (ID, XPATH) ao lado do seletor
-                                         <<~STRATEGY_ITEM
-              <li class='border-b border-gray-200 py-3 last:border-b-0'>
-                <div class='flex justify-between items-center mb-1'>
-                  <p class='font-semibold text-indigo-800 text-sm'>#{safe_escape_html(strategy[:name])}</p>
-                  <span class='text-xs font-medium px-2 py-0.5 rounded-full #{reliability_color}'>#{safe_escape_html(strategy[:reliability].to_s.capitalize)}</span>
-                </div>
-                <div class='bg-gray-800 text-white p-2 rounded mt-1 text-xs whitespace-pre-wrap break-words font-mono'>
-                  <span class='font-bold text-indigo-400'>#{safe_escape_html(strategy[:strategy].to_s.upcase)}:</span>
-                  <code class='ml-1'>#{safe_escape_html(strategy[:locator])}</code>
-                </div>
-              </li>
-            STRATEGY_ITEM
-                                       end.join
-                                       "<div class='carousel-item w-full flex-shrink-0'><ul>#{strategy_list_html}</ul></div>"
-                                     end.join
-
-                                     <<~CAROUSEL
-          <div id="xpath-carousel" class="relative">
-            <div class="overflow-hidden">
-              <div class="carousel-track flex transition-transform duration-300 ease-in-out">
-                #{carousel_items}
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 space-y-6">
+              <div class="bg-white p-4 rounded-lg shadow-md border border-red-200">
+                <h2 class="text-xl font-bold text-red-600 mb-4">Elemento com Falha</h2>
+                <p class="text-sm text-gray-700 font-medium mb-2">Tipo de Seletor: <span class='font-mono text-xs bg-red-100 p-1 rounded'>#{safe_escape_html(failed_info[:selector_type])}</span></p>
+                <p class="text-sm text-gray-700 font-medium">Valor Buscado: <span class='font-mono text-xs bg-red-100 p-1 rounded break-words'>#{safe_escape_html(failed_info[:selector_value])}</span></p>
+              </div>
+              <div class="bg-white p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
+                <img src="data:image/png;base64,#{screenshot_base64}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
               </div>
             </div>
-            <div class="flex items-center justify-center space-x-4 mt-4">
-              <button class="carousel-prev-footer bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                &lt; Anterior
-              </button>
-              <div class="carousel-counter text-center text-sm text-gray-600 font-medium"></div>
-              <button class="carousel-next-footer bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                Próximo &gt;
-              </button>
-            </div>
-          </div>
-        CAROUSEL
-                                   end
-      <<~HTML_REPORT
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Relatório de Falha Appium - #{timestamp}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <style> .tab-button.active { border-bottom: 2px solid #4f46e5; color: #4f46e5; font-weight: 600; } .tab-content { display: none; } .tab-content.active { display: block; } </style>
-        </head>
-        <body class="bg-gray-100 p-4 sm:p-8">
-          <div class="max-w-7xl mx-auto">
-            <header class="mb-8 pb-4 border-b border-gray-300">
-              <h1 class="text-3xl font-bold text-gray-800">Diagnóstico de Falha Automatizada</h1>
-              <p class="text-sm text-gray-500">Relatório gerado em: #{timestamp} | Plataforma: #{platform.to_s.upcase}</p>
-            </header>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div class="lg:col-span-1 space-y-6">
-                <div class="bg-white p-4 rounded-lg shadow-md border border-red-200">
-                  <h2 class="text-xl font-bold text-red-600 mb-4">Elemento com Falha</h2>
-                  #{failed_info_content}
+
+            <div class="lg:col-span-2">
+              <div class="bg-white rounded-lg shadow-md">
+                <div class="flex border-b border-gray-200">
+                  <button class="tab-button active px-4 py-3 text-sm" data-tab="analysis">Análise Avançada</button>
+                  <button class="tab-button px-4 py-3 text-sm text-gray-600" data-tab="all">Dump Completo (#{@all_page_elements.size})</button>
                 </div>
-                <div class="bg-white p-4 rounded-lg shadow-md">
-                  <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
-                  <img src="data:image/png;base64,#{screenshot_base64}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
-                </div>
-              </div>
-              <div class="lg:col-span-2">
-                <div class="bg-white rounded-lg shadow-md">
-                  <div class="flex border-b border-gray-200">
-                    <button class="tab-button active px-4 py-3 text-sm" data-tab="analysis">Análise Avançada</button>
-                    <button class="tab-button px-4 py-3 text-sm text-gray-600" data-tab="all">Dump Completo (#{all_suggestions.size})</button>
+
+                <div class="p-6">
+                  <div id="analysis" class="tab-content active">
+                    <h3 class="text-lg font-semibold text-indigo-700 mb-4">Diagnóstico por Atributos Ponderados</h3>
+                    #{advanced_analysis_html}
+                    #{repair_strategies_content}
                   </div>
-                  <div class="p-6">
-                    <div id="analysis" class="tab-content active">
-                      <h3 class="text-lg font-semibold text-indigo-700 mb-4">Diagnóstico por Atributos Ponderados</h3>
-                      #{advanced_analysis_html}
-                      #{repair_strategies_content}
-                    </div>
-                    <div id="all" class="tab-content">
-                      <h3 class="text-lg font-semibold text-gray-700 mb-4">Dump de Todos os Elementos da Tela</h3>
-                      <div class="max-h-[800px] overflow-y-auto space-y-2">#{all_elements_html.call(all_suggestions)}</div>
+
+                  <div id="all" class="tab-content">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Dump de Todos os Elementos da Tela</h3>
+                    <div class="max-h-[800px] overflow-y-auto space-y-2">
+                      #{all_elements_html}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
           <script>
             document.addEventListener('DOMContentLoaded', () => {
               const tabs = document.querySelectorAll('.tab-button');
@@ -248,111 +135,142 @@ module AppiumFailureHelper
                   document.getElementById(target).classList.add('active');
                 });
               });
+
+              const carousel = document.getElementById('xpath-carousel');
+              if (carousel) {
+                const track = carousel.querySelector('.carousel-track');
+                const items = carousel.querySelectorAll('.carousel-item');
+                const prevButton = carousel.querySelector('.carousel-prev-footer');
+                const nextButton = carousel.querySelector('.carousel-next-footer');
+                const counter = carousel.querySelector('.carousel-counter');
+                const totalItems = items.length;
+                let currentIndex = 0;
+
+                function updateCarousel() {
+                  if(totalItems === 0) { if(counter) counter.textContent = "Nenhuma estratégia"; return; }
+                  track.style.transform = `translateX(-${currentIndex * 100}%)`;
+                  if(counter) counter.textContent = `Página ${currentIndex + 1} de ${totalItems}`;
+                  if(prevButton) prevButton.disabled = currentIndex === 0;
+                  if(nextButton) nextButton.disabled = currentIndex === totalItems - 1;
+                }
+
+                if(nextButton) nextButton.addEventListener('click', () => { if(currentIndex < totalItems - 1) currentIndex++; updateCarousel(); });
+                if(prevButton) prevButton.addEventListener('click', () => { if(currentIndex > 0) currentIndex--; updateCarousel(); });
+                if(totalItems > 0) updateCarousel();
+              }
             });
-            document.addEventListener('DOMContentLoaded', () => {
-                          const tabs = document.querySelectorAll('.tab-button');
-                          tabs.forEach(tab => {
-                            tab.addEventListener('click', (e) => {
-                              e.preventDefault();
-                              const target = tab.getAttribute('data-tab');
-                              tabs.forEach(t => t.classList.remove('active'));
-                              document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                              tab.classList.add('active');
-                              document.getElementById(target).classList.add('active');
-                            });
-                          });
-            
-                          const carousel = document.getElementById('xpath-carousel');
-                          if (carousel) {
-                            const track = carousel.querySelector('.carousel-track');
-                            const items = carousel.querySelectorAll('.carousel-item');
-                            const prevButton = carousel.querySelector('.carousel-prev-footer');
-                            const nextButton = carousel.querySelector('.carousel-next-footer');
-                            const counter = carousel.querySelector('.carousel-counter');
-                            const totalItems = items.length;
-                            let currentIndex = 0;
-            
-                            function updateCarousel() {
-                              if (totalItems === 0) {
-                                if(counter) counter.textContent = "";
-                                return;
-                              };
-                              track.style.transform = `translateX(-${currentIndex * 100}%)`;
-                              if (counter) { counter.textContent = `Página ${currentIndex + 1} de ${totalItems}`; }
-                              if (prevButton) { prevButton.disabled = currentIndex === 0; }
-                              if (nextButton) { nextButton.disabled = currentIndex === totalItems - 1; }
-                            }
-            
-                            if (nextButton) {
-                              nextButton.addEventListener('click', () => {
-                                if (currentIndex < totalItems - 1) { currentIndex++; updateCarousel(); }
-                              });
-                            }
-            
-                            if (prevButton) {
-                              prevButton.addEventListener('click', () => {
-                                if (currentIndex > 0) { currentIndex--; updateCarousel(); }
-                              });
-                            }
-                            
-                            if (totalItems > 0) { updateCarousel(); }
-                          }
-                        });
           </script>
-        </body>
-        </html>
-      HTML_REPORT
+        </div>
+      </body>
+      </html>
+      HTML
     end
 
-    def build_simple_diagnosis_report(title:, message:)
-      exception = @data[:exception]
-      screenshot = @data[:screenshot_base_64]
-      error_message_html = safe_escape_html(exception.message.to_s)
-      backtrace_html = safe_escape_html(exception.backtrace.join("\n"))
+    # === Helpers ===
+    def select_best_candidate(candidates)
+      return {} unless candidates.is_a?(Array) && candidates.any?
+      candidates.max_by do |candidate|
+        analysis = candidate[:analysis] || {}
+        total_score = analysis.values.sum { |v| v[:similarity].to_f rescue 0.0 }
+        total_score / [analysis.size, 1].max
+      end
+    end
 
-      <<~HTML_REPORT
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Diagnóstico de Falha - #{title}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="bg-gray-100 p-4 sm:p-8">
-          <div class="max-w-4xl mx-auto">
-            <header class="mb-8 pb-4 border-b border-gray-200">
-              <h1 class="text-3xl font-bold text-gray-800">Diagnóstico de Falha Automatizada</h1>
-              <p class="text-sm text-gray-500">Relatório gerado em: #{@data[:timestamp]} | Plataforma: #{@data[:platform].to_s.upcase}</p>
-            </header>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div class="md:col-span-1">
-                <div class="bg-white p-4 rounded-lg shadow-md">
-                  <h2 class="text-xl font-bold text-gray-800 mb-4">Screenshot da Falha</h2>
-                  <img src="data:image/png;base64,#{screenshot}" alt="Screenshot da Falha" class="w-full rounded-md shadow-lg border border-gray-200">
-                </div>
-              </div>
-              <div class="md:col-span-2 space-y-6">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                  <h2 class="text-xl font-bold text-red-600 mb-4">#{title}</h2>
-                  <div class="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 rounded-r-lg">
-                    <p class="font-semibold">Causa Provável:</p>
-                    <p>#{message}</p>
-                  </div>
-                </div>
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                  <h3 class="text-lg font-semibold text-gray-700 mb-2">Mensagem de Erro Original</h3>
-                  <pre class="bg-gray-800 text-white p-4 rounded text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto"><code>#{error_message_html}</code></pre>
-                </div>
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                  <h3 class="text-lg font-semibold text-gray-700 mb-2">Stack Trace</h3>
-                  <pre class="bg-gray-800 text-white p-4 rounded text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"><code>#{backtrace_html}</code></pre>
-                </div>
-              </div>
-            </div>
+    def build_advanced_analysis(best_candidate)
+      return "<p class='text-gray-500'>Nenhum candidato provável encontrado.</p>" if best_candidate.nil? || best_candidate.empty?
+
+      (best_candidate[:analysis] || {}).map do |key, data|
+        data ||= {}
+        match = data[:match]
+        similarity = data[:similarity].to_f
+        expected = data[:expected].to_s
+        actual = data[:actual].to_s
+
+        status_color, status_icon, status_text, bg_color = if match || similarity == 1.0
+          ['text-green-700', '✅', "Correspondência Exata!", 'bg-green-50']
+        elsif similarity > 0.7
+          ['text-yellow-800', '⚠️', "Parecido (Encontrado: '#{CGI.escapeHTML(actual)}')", 'bg-yellow-50']
+        else
+          ['text-red-700', '❌', "Diferente! Esperado: '#{CGI.escapeHTML(expected)}'", 'bg-red-50']
+        end
+
+        <<~HTML
+        <div class="p-4 rounded-lg mb-4 #{bg_color} border border-gray-200 shadow-sm">
+          <div class="flex items-center mb-2">
+            <span class="text-xl mr-2">#{status_icon}</span>
+            <h4 class="font-semibold text-gray-900 text-sm">#{key.capitalize}</h4>
           </div>
-        </body>
-        </html>
-      HTML_REPORT
+          <p class="text-sm #{status_color} ml-6 break-words">
+            #{status_text}<br>
+            <span class="font-mono text-xs text-gray-700">Resource-id: #{CGI.escapeHTML(data[:actual].to_s)}</span>
+          </p>
+        </div>
+        HTML
+      end.join
+    end
+
+
+    def build_repair_strategies(strategies)
+      return "<p class='text-gray-500'>Nenhuma estratégia de localização alternativa pôde ser gerada.</p>" if strategies.empty?
+
+      # Ordena por confiabilidade: alta > media > baixa
+      order = { alta: 3, media: 2, baixa: 1 }
+      strategies = strategies.sort_by { |s| -order[s[:reliability]] }
+
+      items_per_page = 4
+      pages = strategies.each_slice(items_per_page).to_a
+
+      pages_html = pages.map do |page|
+        page_items = page.map do |s|
+          reliability_color = case s[:reliability]
+                              when :alta then 'bg-green-100 text-green-800'
+                              when :media then 'bg-yellow-100 text-yellow-800'
+                              else 'bg-red-100 text-red-800'
+                              end
+          <<~STR
+          <li class='border-b border-gray-200 py-3 last:border-b-0'>
+            <div class='flex justify-between items-center mb-1'>
+              <p class='font-semibold text-indigo-800 text-sm'>#{safe_escape_html(s[:name])}</p>
+              <span class='text-xs font-medium px-2 py-0.5 rounded-full #{reliability_color}'>#{safe_escape_html(s[:reliability].to_s.capitalize)}</span>
+            </div>
+            <div class='bg-gray-800 text-white p-2 rounded mt-1 text-xs whitespace-pre-wrap break-words font-mono'>
+              <span class='font-bold text-indigo-400'>#{safe_escape_html(s[:strategy].to_s.upcase)}:</span>
+              <code class='ml-1'>#{safe_escape_html(s[:locator])}</code>
+            </div>
+          </li>
+          STR
+        end.join
+        "<div class='carousel-item w-full flex-shrink-0'><ul>#{page_items}</ul></div>"
+      end.join
+
+      <<~HTML
+      <div id="xpath-carousel" class="relative">
+        <div class="overflow-hidden">
+          <div class="carousel-track flex transition-transform duration-300 ease-in-out">
+            #{pages_html}
+          </div>
+        </div>
+        <div class="flex items-center justify-center space-x-4 mt-4">
+          <button class="carousel-prev-footer bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors">&lt; Anterior</button>
+          <div class="carousel-counter text-center text-sm text-gray-600 font-medium"></div>
+          <button class="carousel-next-footer bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Próximo &gt;</button>
+        </div>
+      </div>
+      HTML
+    end
+
+
+
+    def build_all_elements_html(elements)
+      return "<p class='text-gray-500'>Nenhum elemento capturado.</p>" if elements.empty?
+      elements.map do |el|
+        next "" unless el.is_a?(Hash)
+        locators_html = (el[:locators] || []).map do |loc|
+          "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{safe_escape_html(loc[:strategy].to_s.upcase)}</span>: <span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{safe_escape_html(loc[:locator])}</span></li>"
+        end.join
+
+        "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{safe_escape_html(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html}</ul></details>"
+      end.join
     end
   end
 end
