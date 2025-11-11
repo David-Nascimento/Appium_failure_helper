@@ -263,13 +263,37 @@ module AppiumFailureHelper
 
     def build_all_elements_html(elements)
       return "<p class='text-gray-500'>Nenhum elemento capturado.</p>" if elements.empty?
+
       elements.map do |el|
-        next "" unless el.is_a?(Hash)
-        locators_html = (el[:locators] || []).map do |loc|
-          "<li class='flex justify-between items-center bg-gray-50 p-2 rounded-md mb-1 text-xs font-mono'><span class='font-bold text-indigo-600'>#{safe_escape_html(loc[:strategy].to_s.upcase)}</span>: <span class='text-gray-700 ml-2 overflow-auto max-w-[70%]'>#{safe_escape_html(loc[:locator])}</span></li>"
+        attrs = el[:attributes] || {}
+        locators = el[:locators] || []
+        critical = attrs[:critical] || false
+        bg_color = critical ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-gray-200'
+
+        # Lista de atributos
+        attributes_html = attrs.map do |k, v|
+          "<li class='flex justify-between items-start p-1 text-xs font-mono'><span class='font-semibold text-gray-700'>#{CGI.escapeHTML(k.to_s)}</span>: <span class='text-gray-800 ml-2 break-words'>#{CGI.escapeHTML(v.to_s)}</span></li>"
         end.join
 
-        "<details class='border-b border-gray-200 py-3'><summary class='font-semibold text-sm text-gray-800 cursor-pointer'>#{safe_escape_html(el[:name])}</summary><ul class='text-xs space-y-1 mt-2'>#{locators_html}</ul></details>"
+        # Lista de estratégias de XPath / locators
+        locators_html = locators.map do |loc|
+          "<li class='flex justify-between items-start p-1 text-xs font-mono bg-gray-50 rounded-md mb-1'><span class='font-semibold text-indigo-700'>#{CGI.escapeHTML(loc[:strategy].to_s.upcase)}</span>: <span class='text-gray-800 ml-2 break-words'>#{CGI.escapeHTML(loc[:locator].to_s)}</span></li>"
+        end.join
+
+        <<~HTML
+        <details class="mb-2 border-l-4 #{bg_color} rounded-md p-2">
+          <summary class="font-semibold text-sm text-gray-800 cursor-pointer">#{CGI.escapeHTML(el[:name].to_s)}</summary>
+          <ul class="mt-1 space-y-1">
+            #{attributes_html}
+          </ul>
+          <div class="mt-2">
+            <p class="font-semibold text-gray-600 text-xs mb-1">Estratégias de Localização:</p>
+            <ul class="space-y-1">
+              #{locators_html}
+            </ul>
+          </div>
+        </details>
+        HTML
       end.join
     end
   end
